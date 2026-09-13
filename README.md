@@ -21,4 +21,7 @@ UserDetails
 </li>
 </ul>
 
+<p> 
+The password is prefixed with <i> {noop} </i> to avoid a password encoder, so that our real password is  <b> <i> 12345 </i> </b>.  
+</p>
 
