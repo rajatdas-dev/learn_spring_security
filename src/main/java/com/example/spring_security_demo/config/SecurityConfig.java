@@ -15,7 +15,7 @@ public class SecurityConfig {
 
         UserDetails user = User.builder()
                 .username("user")
-                .password("12345")
+                .password("{noop}12345")
                 .build();
 
         return new InMemoryUserDetailsManager(user);
