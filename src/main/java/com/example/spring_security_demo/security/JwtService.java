@@ -3,6 +3,7 @@ package com.example.spring_security_demo.security;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -11,8 +12,19 @@ import java.util.Date;
 
 @Service
 public class JwtService {
+
+    private final String secretKey;
+    private final long expiration;
     
-    private final String secretKey = "my/9RrRUmI9nCOBio9V7stiuUKncs6yLJRQs0rGwgsU=";
+//    private final String secretKey = "my/9RrRUmI9nCOBio9V7stiuUKncs6yLJRQs0rGwgsU=";
+
+    public JwtService(
+            @Value("${jwt.secret}") String secretKey,
+            @Value("${jwt.expiration}") long expiration
+    ) {
+        this.secretKey = secretKey;
+        this.expiration = expiration;
+    }
     
     public String generateToken(UserDetails userDetails){
 
