@@ -1,5 +1,6 @@
 package com.example.spring_security_demo.exception;
 
+import com.example.spring_security_demo.response.AppErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

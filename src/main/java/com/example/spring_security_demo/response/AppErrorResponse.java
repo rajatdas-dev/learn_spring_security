@@ -1,5 +1,6 @@
-package com.example.spring_security_demo.exception;
+package com.example.spring_security_demo.response;
 
+import com.example.spring_security_demo.exception.ErrorCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
