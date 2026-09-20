@@ -20,6 +20,12 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private final UserDetailsService userDetailsService;
+
+    public SecurityConfig(UserDetailsService userDetailsService) {
+        this.userDetailsService = userDetailsService;
+    }
+
 //    @Bean
 //    public UserDetailsService userDetailsService(){
 //
@@ -52,7 +58,7 @@ public class SecurityConfig {
     }
     
     // Authentication Manager 
-    
+    @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration
     ) throws Exception {
