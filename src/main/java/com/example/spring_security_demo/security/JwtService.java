@@ -1,5 +1,6 @@
 package com.example.spring_security_demo.security;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -10,15 +11,18 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.Date;
 
 @Service
 public class JwtService {
     
     private final PrivateKey privateKey;
+    private final PublicKey publicKey;
     
-    public JwtService(PrivateKey privateKey){
+    public JwtService(PrivateKey privateKey, PublicKey publicKey){
         this.privateKey = privateKey;
+        this.publicKey = publicKey;
     }
     
     public String generateToken(UserDetails userDetails){
@@ -33,6 +37,15 @@ public class JwtService {
                 )
                 .signWith(privateKey, Jwts.SIG.RS256)
                 .compact();
+    }
+    
+    public Claims extractClaims(String token){
+        
+        return Jwts.parser()
+                .verifyWith(publicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
 //    private final String secretKey;

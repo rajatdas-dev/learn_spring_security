@@ -1,5 +1,7 @@
 package com.example.spring_security_demo.config;
 
+import com.example.spring_security_demo.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -12,11 +14,15 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
+    @Autowired
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    
     private final UserDetailsService userDetailsService;
 
     public SecurityConfig(UserDetailsService userDetailsService) {
@@ -70,7 +76,7 @@ public class SecurityConfig {
             HttpSecurity httpSecurity
     ) throws  Exception{
         
-        httpSecurity.csrf(csrf -> csrf.disable())
+       return httpSecurity.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Login/Register doesn't require authentication
                         .requestMatchers("/auth/**")
@@ -78,9 +84,12 @@ public class SecurityConfig {
                         
                         // Everything else requires authentication
                         .anyRequest()
-                        .authenticated());
+                        .authenticated())
         
-        return httpSecurity.build();
+                .addFilterBefore(
+                        jwtAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                ).build();
     }
     
 

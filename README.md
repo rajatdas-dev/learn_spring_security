@@ -118,3 +118,29 @@ private_key.pem
 │ generates
 ▼
 public_key.pem
+
+                ┌─────────────────────────┐
+                │       RSA KEY PAIR      │
+                │                         │
+                │ private_key.pem         │
+                │ public_key.pem          │
+                └────────────┬────────────┘
+                             │
+                 JwtKeyConfig.java
+                             │
+                 ┌───────────┴───────────┐
+                 ▼                       ▼
+            PrivateKey                PublicKey
+                 │                       │
+                 │ SIGN                  │ VERIFY
+                 ▼                       ▼
+              JwtService        JwtAuthenticationFilter
+                 │                       │
+                 ▼                       ▼
+                JWT  ───────────────► Request
+                                         │
+                                         ▼
+                                  SecurityContext
+                                         │
+                                         ▼
+                                    Controller
