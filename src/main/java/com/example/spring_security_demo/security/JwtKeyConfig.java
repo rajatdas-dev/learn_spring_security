@@ -19,57 +19,103 @@ import java.util.Base64;
 
 @Configuration
 public class JwtKeyConfig {
-
-
-    @Value("${jwt.private-key}")
-    private Resource privateKeyResource;
-
-    @Value("${jwt.public-key}")
-    private Resource publicKeyResource;
-
-
+    
+    // ECDSA 
+    
     @Bean
-    public PrivateKey privateKey() throws Exception {
-
-        String key = readKey(privateKeyResource);
-
-        byte[] keyBytes = Base64.getDecoder().decode(key);
-
-        PKCS8EncodedKeySpec keySpec =
-                new PKCS8EncodedKeySpec(keyBytes);
-
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-
+    public PrivateKey privateKey() throws Exception{
+        
+        String key = Files.readString(
+                Path.of("src/main/resources/keys/private_key.pem")
+        );
+        
+        key = key.
+                replace("-----BEGIN PRIVATE KEY-----","")
+                .replace("-----END PRIVATE KEY-----","")
+                .replaceAll("\\s","");
+        
+        byte[] decoded = Base64.getDecoder().decode(key);
+        
+        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(decoded);
+        
+        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+        
         return keyFactory.generatePrivate(keySpec);
     }
-
+    
     @Bean
     public PublicKey publicKey() throws Exception {
-
-        String key = readKey(publicKeyResource);
-
-        byte[] keyBytes = Base64.getDecoder().decode(key);
-
-        X509EncodedKeySpec keySpec =
-                new X509EncodedKeySpec(keyBytes);
-
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-
+        
+        String key = Files.readString(
+                Path.of("src/main/resources/keys/public_key.pem")
+        );
+        
+        key = key
+                .replace("-----BEGIN PUBLIC KEY-----","")
+                .replace("-----END PUBLIC KEY-----","")
+                .replaceAll("\\s","");
+        
+        byte[] decoded = Base64.getDecoder().decode(key);
+        
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(decoded);
+        
+        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+        
         return keyFactory.generatePublic(keySpec);
     }
 
-    private String readKey(Resource resource) throws IOException {
+    
+    // RSA 
 
-        String key = new String(
-                resource.getInputStream().readAllBytes(),
-                StandardCharsets.UTF_8
-        );
-
-        return key
-                .replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replace("-----BEGIN PUBLIC KEY-----", "")
-                .replace("-----END PUBLIC KEY-----", "")
-                .replaceAll("\\s+", "");
-    }
+//    @Value("${jwt.private-key}")
+//    private Resource privateKeyResource;
+//
+//    @Value("${jwt.public-key}")
+//    private Resource publicKeyResource;
+//
+//
+//    @Bean
+//    public PrivateKey privateKey() throws Exception {
+//
+//        String key = readKey(privateKeyResource);
+//
+//        byte[] keyBytes = Base64.getDecoder().decode(key);
+//
+//        PKCS8EncodedKeySpec keySpec =
+//                new PKCS8EncodedKeySpec(keyBytes);
+//
+//        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+//
+//        return keyFactory.generatePrivate(keySpec);
+//    }
+//
+//    @Bean
+//    public PublicKey publicKey() throws Exception {
+//
+//        String key = readKey(publicKeyResource);
+//
+//        byte[] keyBytes = Base64.getDecoder().decode(key);
+//
+//        X509EncodedKeySpec keySpec =
+//                new X509EncodedKeySpec(keyBytes);
+//
+//        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+//
+//        return keyFactory.generatePublic(keySpec);
+//    }
+//
+//    private String readKey(Resource resource) throws IOException {
+//
+//        String key = new String(
+//                resource.getInputStream().readAllBytes(),
+//                StandardCharsets.UTF_8
+//        );
+//
+//        return key
+//                .replace("-----BEGIN PRIVATE KEY-----", "")
+//                .replace("-----END PRIVATE KEY-----", "")
+//                .replace("-----BEGIN PUBLIC KEY-----", "")
+//                .replace("-----END PUBLIC KEY-----", "")
+//                .replaceAll("\\s+", "");
+//    }
 }

@@ -35,7 +35,8 @@ public class JwtService {
                                 System.currentTimeMillis() + 1000 * 60 * 60
                         )
                 )
-                .signWith(privateKey, Jwts.SIG.RS256)
+                .signWith(privateKey, Jwts.SIG.ES256)   // for ECDSA
+//                .signWith(privateKey, Jwts.SIG.RS256)   // for RSA
                 .compact();
     }
     

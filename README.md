@@ -103,7 +103,9 @@ Controller
 | CustomUserDetailsService           | Same         | **Same**            |
 | DaoAuthenticationProvider          | Same         | **Same**            |
 
-# Generate a 3072-bit RSA private key
+# RSA 
+
+# Generate a 3072-bit RSA private key 
 
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private_key.pem
 
@@ -144,3 +146,30 @@ public_key.pem
                                          │
                                          ▼
                                     Controller
+
+## ECDSA
+
+# Generate Private key using the P-256 Curve
+
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out private_key.pem
+
+# Generate the EC public key 
+
+openssl ec -in private_key.pem -pubout -out public_key.pem
+
+# Your algorithm is now ES256
+
+This is the key difference <b> ES256 </b> means ECDSA + SHA-256 + P-256 curve
+
+So you are no longer using RS256 or HS256. 
+
+Your JWT header should eventually contain: 
+
+{
+"alg": ES256
+}
+
+
+
+
+
