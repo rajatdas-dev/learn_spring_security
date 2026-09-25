@@ -11,6 +11,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.scrypt.SCryptPasswordEncoder;
@@ -44,7 +45,8 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder(){
         
-        return SCryptPasswordEncoder.defaultsForSpringSecurity_v5_8();
+        return Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+//        return SCryptPasswordEncoder.defaultsForSpringSecurity_v5_8();
 //        return new BCryptPasswordEncoder();
     }
     
