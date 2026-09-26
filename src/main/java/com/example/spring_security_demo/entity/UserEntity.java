@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 
 @Entity
 @Data
@@ -22,5 +23,9 @@ public class UserEntity {
 
     @Column(nullable = false)
     private String password;
+    
+    @Column(nullable = false)
+    @Value("USER")
+    private String role;
 
 }

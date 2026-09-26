@@ -84,8 +84,13 @@ public class SecurityConfig {
        return httpSecurity.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Login/Register doesn't require authentication
-                        .requestMatchers("/auth/**")
-                        .permitAll()
+                        .requestMatchers("/auth/**").permitAll()
+                        
+                        // Admin apis
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        
+                        // User Apis
+                        .requestMatchers("/users/**").hasRole("USER")
                         
                         // Everything else requires authentication
                         .anyRequest()

@@ -58,6 +58,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity userEntity = new UserEntity();
         userEntity.setUsername(loginRequestDTO.getUsername());
         userEntity.setPassword(passwordEncoder.encode(loginRequestDTO.getPassword()));
+        userEntity.setRole("USER");
         return userEntity;
     }
 }
