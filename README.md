@@ -2,7 +2,24 @@
 
 > A practical Spring Security project created **just for learning and understanding how Spring Security works internally**.
 
-This project focuses on understanding the complete authentication pipeline instead of simply copying Spring Security configuration from tutorials.
+This project focuses on understanding the complete authentication and authorization pipeline instead of simply copying Spring Security configuration from tutorials.
+
+The project currently covers:
+
+* Password hashing
+* Username/password authentication
+* `UserDetailsService`
+* `AuthenticationManager`
+* `DaoAuthenticationProvider`
+* JWT authentication
+* HMAC, RSA and ECDSA
+* JWT filters
+* `SecurityContext`
+* Stateless authentication
+* Role-Based Access Control (RBAC)
+* Method-level authorization
+* Custom `401 Unauthorized` handling
+* Custom `403 Forbidden` handling
 
 ---
 
@@ -22,32 +39,40 @@ This project focuses on understanding the complete authentication pipeline inste
     * [BCrypt](#2-bcrypt)
     * [SCrypt](#3-scrypt)
     * [Argon2](#4-argon2)
-10. [Password Encoder Comparison](#-password-encoder-comparison)
-11. [Project Architecture](#-project-architecture)
-12. [File-by-File Explanation](#-file-by-file-explanation)
-13. [Registration Flow](#-registration-flow)
-14. [Login Flow](#-login-flow)
-15. [AuthenticationManager](#-authenticationmanager)
-16. [DaoAuthenticationProvider](#-daoauthenticationprovider)
-17. [CustomUserDetailsService](#-customuserdetailsservice)
-18. [JWT](#-jwt)
-19. [JWT Structure](#-jwt-structure)
-20. [JWT Signing Algorithms](#-jwt-signing-algorithms)
-21. [Symmetric Cryptography — HMAC](#-symmetric-cryptography--hmac)
-22. [Asymmetric Cryptography](#-asymmetric-cryptography)
-23. [RSA](#-rsa)
-24. [ECDSA](#-ecdsa)
-25. [RSA vs ECDSA](#-rsa-vs-ecdsa)
-26. [HMAC vs RSA vs ECDSA](#-hmac-vs-rsa-vs-ecdsa)
-27. [JwtService](#-jwtservice)
-28. [JwtAuthenticationFilter](#-jwtauthenticationfilter)
-29. [SecurityContext](#-securitycontext)
-30. [Complete Login Architecture](#-complete-login-architecture)
-31. [Complete JWT Request Architecture](#-complete-jwt-request-architecture)
-32. [Important Security Rules](#-important-security-rules)
-33. [Complete Component Reference](#-complete-component-reference)
-34. [Learning Order](#-learning-order)
-35. [Final Mental Model](#-final-mental-model)
+10. [Argon2 and Bouncy Castle Dependency](#-argon2-and-bouncy-castle-dependency)
+11. [Password Encoder Comparison](#-password-encoder-comparison)
+12. [Project Architecture](#-project-architecture)
+13. [File-by-File Explanation](#-file-by-file-explanation)
+14. [Registration Flow](#-registration-flow)
+15. [Login Flow](#-login-flow)
+16. [AuthenticationManager](#-authenticationmanager)
+17. [DaoAuthenticationProvider](#-daoauthenticationprovider)
+18. [CustomUserDetailsService](#-customuserdetailsservice)
+19. [JWT](#-jwt)
+20. [JWT Structure](#-jwt-structure)
+21. [JWT Signing Algorithms](#-jwt-signing-algorithms)
+22. [Symmetric Cryptography — HMAC](#-symmetric-cryptography--hmac)
+23. [Asymmetric Cryptography](#-asymmetric-cryptography)
+24. [RSA](#-rsa)
+25. [ECDSA](#-ecdsa)
+26. [RSA vs ECDSA](#-rsa-vs-ecdsa)
+27. [HMAC vs RSA vs ECDSA](#-hmac-vs-rsa-vs-ecdsa)
+28. [JwtService](#-jwtservice)
+29. [JwtAuthenticationFilter](#-jwtauthenticationfilter)
+30. [SecurityContext](#-securitycontext)
+31. [Role-Based Access Control — RBAC](#-role-based-access-control--rbac)
+32. [Roles and Authorities](#-roles-and-authorities)
+33. [Method-Level Security](#-method-level-security)
+34. [Role Assignment](#-role-assignment)
+35. [Custom 401 and 403 Exception Handling](#-custom-401-and-403-exception-handling)
+36. [Complete Login Architecture](#-complete-login-architecture)
+37. [Complete JWT Request Architecture](#-complete-jwt-request-architecture)
+38. [Complete RBAC Request Architecture](#-complete-rbac-request-architecture)
+39. [Stateless Authentication](#-stateless-authentication)
+40. [Important Security Rules](#-important-security-rules)
+41. [Complete Component Reference](#-complete-component-reference)
+42. [Learning Order](#-learning-order)
+43. [Final Mental Model](#-final-mental-model)
 
 ---
 
@@ -67,36 +92,36 @@ The goal is to understand what happens internally when a user:
 8. Sends the JWT with another request
 9. Gets the JWT verified
 10. Gets an `Authentication` object
-11. Reaches a protected controller
+11. Gets their roles/authorities
+12. Gets authorization checked
+13. Reaches a protected controller
 
-The complete process can be divided into two major security systems:
+The complete security architecture can be divided into:
 
 ```text
                     APPLICATION SECURITY
                            │
-              ┌────────────┴────────────┐
-              │                         │
-              ▼                         ▼
-       PASSWORD AUTHENTICATION       JWT AUTHENTICATION
-              │                         │
-              ▼                         ▼
-       PasswordEncoder              JWT Signature
-              │                         │
-       ┌──────┴──────┐           ┌──────┴──────┐
-       ▼             ▼           ▼             ▼
-    BCrypt        SCrypt      HMAC          RSA/ECDSA
-       │             │           │             │
-       └──────┬──────┘           └──────┬──────┘
-              │                         │
-              ▼                         ▼
-        Password Hash              JWT Signature
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+     Password          Authentication   Authorization
+      Security              │                │
+          │                 │                │
+          ▼                 ▼                ▼
+   PasswordEncoder      JWT / Auth       RBAC
+          │                 │                │
+          ▼                 ▼                ▼
+    Password Hash       JWT Token       Roles
+                                            │
+                                            ▼
+                                      Permissions
 ```
 
 ---
 
 # 🧠 Big Picture
 
-A very important concept in this project is that **password security and JWT security are two different things**.
+A very important concept in this project is that **password security, authentication, JWT signing, and authorization are different concerns**.
 
 ### Password security
 
@@ -107,7 +132,7 @@ Password
 PasswordEncoder
     │
     ▼
-Hash
+Password Hash
     │
     ▼
 Database
@@ -121,10 +146,22 @@ SCrypt
 Argon2
 ```
 
+### Authentication
+
+```text
+Username + Password
+        │
+        ▼
+AuthenticationManager
+        │
+        ▼
+Authenticated User
+```
+
 ### JWT security
 
 ```text
-JWT
+JWT Data
  │
  ▼
 Cryptographic Signing
@@ -134,23 +171,55 @@ Cryptographic Signing
  └── ECDSA
 ```
 
-So:
+### Authorization
+
+```text
+Authenticated User
+        │
+        ▼
+Role / Authority
+        │
+        ▼
+Access Decision
+        │
+        ├── Allowed
+        │
+        └── Forbidden
+```
+
+Therefore:
 
 ```text
 PasswordEncoder
       ≠
-JWT signing algorithm
+JWT Signing
+      ≠
+Authorization
 ```
 
-For example, you can use:
+For example:
 
 ```text
-Argon2 + HMAC
-Argon2 + RSA
-Argon2 + ECDSA
+Argon2 + RSA + RBAC
 ```
 
-The password encoder and JWT algorithm are independent choices.
+means:
+
+```text
+Argon2
+  ↓
+Password hashing
+
+RSA
+  ↓
+JWT signing
+
+RBAC
+  ↓
+Authorization
+```
+
+These are separate security mechanisms.
 
 ---
 
@@ -168,10 +237,10 @@ Example:
 username + password
         │
         ▼
-Authentication
+AuthenticationManager
         │
         ▼
-User identified
+User authenticated
 ```
 
 ---
@@ -188,21 +257,35 @@ Example:
 Authenticated User
         │
         ▼
-Role: USER
+ROLE_USER
         │
         ▼
-Can access:
-GET /profile
+GET /user/profile
+        │
+        ▼
+Allowed
+```
 
-Cannot access:
-DELETE /admin/users
+But:
+
+```text
+ROLE_USER
+   │
+   ▼
+DELETE /user/comments/10
+   │
+   ▼
+Requires MODERATOR or ADMIN
+   │
+   ▼
+403 Forbidden
 ```
 
 Therefore:
 
 ```text
 Authentication = Who are you?
-Authorization  = What can you access?
+Authorization  = What are you allowed to access?
 ```
 
 ---
@@ -251,7 +334,13 @@ JwtAuthenticationFilter
 Signature Verification
  │
  ▼
+Authentication
+ │
+ ▼
 SecurityContext
+ │
+ ▼
+Authorization
  │
  ▼
 Controller
@@ -352,6 +441,25 @@ UserDetails
     └── Spring Security's representation of user
 ```
 
+The application database can contain:
+
+```text
+UserEntity
+├── id
+├── username
+├── password
+└── role
+```
+
+Spring Security then converts this information into:
+
+```text
+UserDetails
+├── username
+├── password
+└── authorities
+```
+
 ---
 
 # 🔑 PasswordEncoder
@@ -400,8 +508,6 @@ Password Hash
       ▼
 Database
 ```
-
-The purpose is to securely store a password.
 
 Examples:
 
@@ -453,7 +559,7 @@ JWT signing and verification
 
 # 🔐 Password Encoders
 
-This project explores three important password hashing algorithms:
+This project explores:
 
 ```text
 BCrypt
@@ -481,11 +587,7 @@ This means:
 
 > Do not apply password hashing.
 
-The stored value is effectively treated as the raw password.
-
-### Important
-
-This is useful for:
+It can be useful for:
 
 * basic demonstrations
 * temporary learning
@@ -499,7 +601,7 @@ It should **not** be used for real password storage.
 
 BCrypt is a password hashing algorithm designed to make password guessing more expensive.
 
-Example configuration:
+Example:
 
 ```java
 @Bean
@@ -565,26 +667,9 @@ public PasswordEncoder passwordEncoder() {
 }
 ```
 
-Flow:
-
-```text
-ourpassword
-      │
-      ▼
-SCryptPasswordEncoder
-      │
-      ▼
-SCrypt Hash
-      │
-      ▼
-Database
-```
-
 SCrypt is designed to be **memory-hard**.
 
-That means it intentionally requires significant memory resources in addition to computational work.
-
-This makes large-scale password cracking more expensive.
+It intentionally requires memory resources in addition to computational work.
 
 ---
 
@@ -617,9 +702,9 @@ Argon2 Hash
 Database
 ```
 
-Argon2 is also designed to be memory-hard.
+Argon2 is memory-hard.
 
-There are different Argon2 variants, including:
+Important Argon2 variants include:
 
 ```text
 Argon2d
@@ -627,62 +712,105 @@ Argon2i
 Argon2id
 ```
 
-Argon2id is commonly associated with password hashing because it combines properties intended to provide strong resistance against different attack techniques.
+Argon2id is commonly used for password hashing because it combines resistance characteristics associated with both Argon2i and Argon2d.
+
+---
+
+# 📦 Argon2 and Bouncy Castle Dependency
+
+While using:
+
+```java
+Argon2PasswordEncoder
+```
+
+this project encountered a runtime error similar to:
+
+```text
+java.lang.NoClassDefFoundError:
+org/bouncycastle/crypto/params/Argon2Parameters$Builder
+```
+
+The important part of the exception was:
+
+```text
+ClassNotFoundException:
+org.bouncycastle.crypto.params.Argon2Parameters$Builder
+```
+
+This happened because Spring Security's Argon2 password encoder relies on **Bouncy Castle cryptographic classes**.
+
+Therefore, the application needs the Bouncy Castle provider dependency.
+
+The dependency added to the project is:
+
+```xml
+<dependency>
+    <groupId>org.bouncycastle</groupId>
+    <artifactId>bcprov-jdk18on</artifactId>
+    <version>1.86</version>
+</dependency>
+```
+
+The dependency provides cryptographic classes required by the Argon2 implementation.
+
+Conceptually:
+
+```text
+Argon2PasswordEncoder
+        │
+        ▼
+Spring Security
+        │
+        ▼
+Bouncy Castle
+        │
+        ▼
+Argon2 cryptographic implementation
+```
+
+### Why did BCrypt work without it?
+
+BCrypt does not require this additional Bouncy Castle dependency in the same way.
+
+Therefore:
+
+```text
+BCrypt
+   │
+   └── Spring Security
+
+SCrypt
+   │
+   └── Spring Security
+
+Argon2
+   │
+   └── Spring Security
+            │
+            ▼
+      Bouncy Castle
+```
+
+The important lesson is:
+
+> Adding the Bouncy Castle dependency does not change how Argon2 works. It provides the cryptographic classes required by the Argon2 implementation used by the application.
 
 ---
 
 # 🔄 BCrypt vs SCrypt vs Argon2
 
-| Feature                  | BCrypt           | SCrypt           | Argon2           |
-| ------------------------ | ---------------- | ---------------- | ---------------- |
-| Purpose                  | Password hashing | Password hashing | Password hashing |
-| One-way                  | Yes              | Yes              | Yes              |
-| Salted                   | Yes              | Yes              | Yes              |
-| Memory-hard              | No               | Yes              | Yes              |
-| Configurable work        | Yes              | Yes              | Yes              |
-| Spring `PasswordEncoder` | Yes              | Yes              | Yes              |
-| JWT generation           | No               | No               | No               |
-| Encryption               | No               | No               | No               |
-
----
-
-# 🧠 Password Encoder Migration
-
-Because the application depends on:
-
-```java
-PasswordEncoder
-```
-
-we can replace the implementation.
-
-For example:
-
-```text
-PasswordEncoder
-      │
-      ├── BCryptPasswordEncoder
-      │
-      ├── SCryptPasswordEncoder
-      │
-      └── Argon2PasswordEncoder
-```
-
-The rest of the authentication architecture does not need to know which implementation is being used.
-
-For this project, the progression is:
-
-```text
-BCrypt
-   ↓
-SCrypt
-   ↓
-Argon2
-```
-
-If existing users have passwords encoded using one algorithm, their stored hashes cannot simply be interpreted as hashes from another algorithm.
-
-For a learning project, test users can be recreated after changing the encoder.
+| Feature                             | BCrypt           | SCrypt           | Argon2                      |
+| ----------------------------------- | ---------------- | ---------------- | --------------------------- |
+| Purpose                             | Password hashing | Password hashing | Password hashing            |
+| One-way                             | Yes              | Yes              | Yes                         |
+| Salted                              | Yes              | Yes              | Yes                         |
+| Memory-hard                         | No               | Yes              | Yes                         |
+| Configurable work                   | Yes              | Yes              | Yes                         |
+| Spring `PasswordEncoder`            | Yes              | Yes              | Yes                         |
+| JWT generation                      | No               | No               | No                          |
+| Encryption                          | No               | No               | No                          |
+| Additional Bouncy Castle dependency | No               | No               | Yes, for this project setup |
 
 ---
 
@@ -701,7 +829,8 @@ src/
     │               │   └── JwtKeyConfig.java
     │               │
     │               ├── controller/
-    │               │   └── AuthController.java
+    │               │   ├── AuthController.java
+    │               │   └── UserController.java
     │               │
     │               ├── dto/
     │               │   ├── LoginRequestDTO.java
@@ -713,12 +842,17 @@ src/
     │               ├── repository/
     │               │   └── UserRepository.java
     │               │
+    │               ├── response/
+    │               │   └── ApiResponse.java
+    │               │
     │               ├── service/
     │               │   ├── AuthService.java
     │               │   └── AuthServiceImpl.java
     │               │
     │               └── security/
     │                   ├── CustomUserDetailsService.java
+    │                   ├── CustomAccessDeniedHandler.java
+    │                   ├── CustomAuthenticationEntryPoint.java
     │                   ├── JwtService.java
     │                   └── JwtAuthenticationFilter.java
     │
@@ -747,26 +881,27 @@ Responsibilities:
 * Configure `AuthenticationManager`
 * Register JWT filter
 * Configure stateless authentication
+* Enable method-level security
+* Configure custom `401` handling
+* Configure custom `403` handling
 
-Conceptually:
+Important:
 
-```text
-SecurityConfig
-    │
-    ├── PasswordEncoder
-    ├── AuthenticationProvider
-    ├── AuthenticationManager
-    ├── SecurityFilterChain
-    └── JwtAuthenticationFilter
+```java
+@EnableMethodSecurity
+```
+
+enables annotations such as:
+
+```java
+@PreAuthorize(...)
 ```
 
 ---
 
 # `JwtKeyConfig.java`
 
-Responsible for loading or creating the cryptographic keys used by JWT.
-
-For asymmetric algorithms:
+Responsible for loading cryptographic keys used by asymmetric JWT algorithms.
 
 ```text
 private_key.pem
@@ -793,13 +928,11 @@ Public key:
 VERIFY
 ```
 
-For HMAC, this class is not needed in the same private/public-key form because HMAC uses one shared secret.
-
 ---
 
 # `AuthController.java`
 
-The HTTP/API layer.
+HTTP/API layer for authentication.
 
 Example endpoints:
 
@@ -820,35 +953,33 @@ AuthController
 AuthService
 ```
 
-The controller should remain relatively thin.
-
 ---
 
-# `LoginRequestDTO.java`
+# `UserController.java`
 
-Carries login input.
+Contains protected user-related endpoints and demonstrates RBAC.
 
-Example:
+Examples:
 
-```json
-{
-    "username": "rajat",
-    "password": "ourpassword"
-}
+```http
+GET /user/profile
+PUT /user/profile
+GET /user/dashboard
+GET /user/moderation
+DELETE /user/comments/{commentId}
+GET /user/admin/reports
 ```
 
----
+Authorization is implemented using:
 
-# `LoginResponseDTO.java`
-
-Carries login output.
+```java
+@PreAuthorize(...)
+```
 
 Example:
 
-```json
-{
-    "token": "eyJhbGciOi..."
-}
+```java
+@PreAuthorize("hasAnyRole('MODERATOR','ADMIN')")
 ```
 
 ---
@@ -857,16 +988,27 @@ Example:
 
 Represents the application user stored in the database.
 
-Example:
+Current conceptual structure:
 
 ```text
 UserEntity
 ├── id
 ├── username
-└── password
+├── password
+└── role
 ```
 
-The password field should contain a **password hash**, not the original password.
+The password contains a **password hash**, not the original password.
+
+The role identifies the user's authorization level.
+
+Example:
+
+```text
+USER
+MODERATOR
+ADMIN
+```
 
 ---
 
@@ -924,35 +1066,45 @@ AuthServiceImpl
 PasswordEncoder
   │
   ▼
+Argon2
+  │
+  ▼
+UserEntity
+  │
+  ▼
 UserRepository
   │
   ▼
 Database
 ```
 
-Login:
+The normal registration flow assigns:
 
 ```text
-Login Request
-      │
-      ▼
-AuthenticationManager
-      │
-      ▼
-Authentication
-      │
-      ▼
-JwtService
-      │
-      ▼
-JWT
+USER
 ```
+
+to a newly registered account.
+
+The client should **not** be allowed to submit:
+
+```json
+{
+    "username": "rajat",
+    "password": "password",
+    "role": "ADMIN"
+}
+```
+
+and make itself an administrator.
 
 ---
 
 # `CustomUserDetailsService.java`
 
-Connects our application's database with Spring Security.
+Connects the application's database with Spring Security.
+
+Flow:
 
 ```text
 username
@@ -969,14 +1121,115 @@ Database
    ▼
 UserEntity
    │
+   ├── username
+   ├── password
+   └── role
+   │
    ▼
 UserDetails
+   │
+   ▼
+Authorities
 ```
 
-It implements:
+The role stored in the database is converted into a Spring Security authority.
 
-```java
-UserDetailsService
+For example:
+
+```text
+Database role:
+
+USER
+
+Spring Security authority:
+
+ROLE_USER
+```
+
+Similarly:
+
+```text
+MODERATOR → ROLE_MODERATOR
+
+ADMIN → ROLE_ADMIN
+```
+
+---
+
+# `CustomAccessDeniedHandler.java`
+
+Handles authorization failures.
+
+It is used when:
+
+> The user is authenticated but does not have sufficient permissions.
+
+Example:
+
+```text
+ROLE_USER
+    │
+    ▼
+DELETE /user/comments/10
+    │
+    ▼
+Requires ROLE_MODERATOR or ROLE_ADMIN
+    │
+    ▼
+AccessDeniedException
+    │
+    ▼
+CustomAccessDeniedHandler
+    │
+    ▼
+403 Forbidden
+```
+
+The handler can also log useful information:
+
+```text
+403 FORBIDDEN
+method=DELETE
+uri=/user/comments/10
+```
+
+and return the application's standard `ApiResponse`.
+
+---
+
+# `CustomAuthenticationEntryPoint.java`
+
+Handles authentication failures.
+
+It is used when:
+
+> The request requires authentication, but the user is not successfully authenticated.
+
+Examples:
+
+```text
+No JWT
+Invalid JWT
+Expired JWT
+Unauthenticated request
+```
+
+Flow:
+
+```text
+Request
+   │
+   ▼
+Authentication required
+   │
+   ▼
+Authentication missing/invalid
+   │
+   ▼
+CustomAuthenticationEntryPoint
+   │
+   ▼
+401 Unauthorized
 ```
 
 ---
@@ -994,7 +1247,7 @@ Depending on the selected algorithm, it can:
 * extract subject/username
 * check expiration
 
-The signing key depends on the JWT algorithm.
+Signing key:
 
 ```text
 HMAC
@@ -1017,7 +1270,7 @@ Runs for incoming requests and looks for:
 Authorization: Bearer <JWT>
 ```
 
-Its responsibilities include:
+Responsibilities:
 
 1. Read Authorization header.
 2. Extract Bearer token.
@@ -1033,7 +1286,7 @@ Its responsibilities include:
 
 Contains application configuration.
 
-Examples include:
+Examples:
 
 ```properties
 spring.datasource.url=...
@@ -1053,58 +1306,9 @@ jwt.secret=...
 
 may be used.
 
-For RSA/ECDSA, the JWT signing secret is replaced by private/public key configuration.
+For RSA/ECDSA, private/public key configuration is used instead.
 
-### Important
-
-Real secrets and private keys should not be committed to Git.
-
-Use:
-
-* environment variables
-* secret managers
-* mounted secrets
-* deployment platform secret configuration
-
-for real applications.
-
----
-
-# `private_key.pem`
-
-Used by asymmetric JWT algorithms:
-
-```text
-RSA
-ECDSA
-```
-
-Its responsibility is:
-
-```text
-SIGN JWT
-```
-
-It must remain private.
-
----
-
-# `public_key.pem`
-
-Used by asymmetric JWT algorithms:
-
-```text
-RSA
-ECDSA
-```
-
-Its responsibility is:
-
-```text
-VERIFY JWT
-```
-
-It does not allow someone to create a valid signature.
+Real secrets should not be committed to Git.
 
 ---
 
@@ -1126,13 +1330,17 @@ AuthService
 PasswordEncoder
   │
   ▼
-Argon2 / SCrypt / BCrypt
+Argon2
   │
   ▼
 Password Hash
   │
   ▼
 UserEntity
+  │
+  ├── username
+  ├── password hash
+  └── role = USER
   │
   ▼
 UserRepository
@@ -1141,20 +1349,16 @@ UserRepository
 PostgreSQL
 ```
 
-For the current version of the project:
+Important security rule:
 
 ```text
-Password
-   │
-   ▼
-Argon2PasswordEncoder
-   │
-   ▼
-Argon2 Hash
-   │
-   ▼
-Database
+Public Registration
+        │
+        ▼
+Always USER
 ```
+
+A normal registration request should not decide its own role.
 
 ---
 
@@ -1196,7 +1400,7 @@ Argon2
   ▼
 Password matches?
   │
-  ├── NO  → Authentication Failure
+  ├── NO  → Authentication Failure → 401
   │
   └── YES
        │
@@ -1312,7 +1516,7 @@ UserEntity
 UserDetails
 ```
 
-This is why `CustomUserDetailsService` is important even though the controller may never directly call it.
+The role is also loaded from the database.
 
 ---
 
@@ -1327,16 +1531,6 @@ A JWT is commonly used to carry claims between a client and server.
 Example:
 
 ```text
-eyJhbGciOiJFUzI1NiJ9
-.
-eyJzdWIiOiJyYWphdCJ9
-.
-SIGNATURE
-```
-
-A JWT consists of three parts:
-
-```text
 HEADER.PAYLOAD.SIGNATURE
 ```
 
@@ -1345,8 +1539,6 @@ HEADER.PAYLOAD.SIGNATURE
 # 🧩 JWT Structure
 
 ## Header
-
-Contains metadata such as the signing algorithm.
 
 Example:
 
@@ -1360,8 +1552,6 @@ Example:
 
 ## Payload
 
-Contains claims.
-
 Example:
 
 ```json
@@ -1372,21 +1562,15 @@ Example:
 }
 ```
 
-The payload is **not encrypted simply because it is a JWT**.
+The payload is not automatically encrypted.
 
-Anyone who obtains the token can generally decode its header and payload.
-
-Therefore:
-
-> Do not put sensitive secrets or passwords inside JWT claims.
+Do not put passwords or sensitive secrets into JWT claims.
 
 ---
 
 ## Signature
 
 The signature protects the integrity/authenticity of the signed JWT.
-
-Conceptually:
 
 ```text
 Header
@@ -1403,7 +1587,7 @@ Signature
 
 # 🔐 JWT Signing Algorithms
 
-JWT commonly uses three important families:
+JWT commonly uses:
 
 ```text
 HMAC
@@ -1427,9 +1611,9 @@ They can be divided into:
 
 ---
 
-# 🔵 Symmetric Cryptography
+# 🔵 Symmetric Cryptography — HMAC
 
-Symmetric cryptography uses the **same secret key** for both operations.
+Symmetric cryptography uses the same secret for signing and verification.
 
 ```text
           SAME SECRET
@@ -1437,12 +1621,6 @@ Symmetric cryptography uses the **same secret key** for both operations.
           │         │
           ▼         ▼
        SIGN       VERIFY
-```
-
-For JWT, the major symmetric algorithm family is:
-
-```text
-HMAC
 ```
 
 Examples:
@@ -1453,124 +1631,24 @@ HS384
 HS512
 ```
 
----
-
-# 🔵 HMAC
-
-HMAC stands for:
-
-> Hash-based Message Authentication Code
-
-In JWT:
+For example:
 
 ```text
-HS256
+HS256 = HMAC + SHA-256
 ```
-
-means HMAC using SHA-256.
-
----
-
-## HMAC Architecture
-
-```text
-                SHARED SECRET
-                     │
-            ┌────────┴────────┐
-            │                 │
-            ▼                 ▼
-         SERVER A          SERVER B
-            │                 │
-          SIGN              VERIFY
-            │                 │
-            └────────┬────────┘
-                     │
-                     ▼
-                    JWT
-```
-
-The same secret is needed to create and verify the signature.
-
----
-
-## HMAC JWT Flow
-
-Signing:
-
-```text
-Header
-  +
-Payload
-  +
-Secret
-  │
-  ▼
-HMAC
-  │
-  ▼
-Signature
-```
-
-Verification:
-
-```text
-JWT
- │
- ▼
-Header + Payload
- │
- ▼
-Same Secret
- │
- ▼
-Calculate Signature
- │
- ▼
-Compare
-```
-
----
-
-# ⚠️ HMAC Key Management
-
-The biggest conceptual difference is:
-
-```text
-HMAC
- ↓
-One shared secret
-```
-
-Every service that needs to verify or create tokens must possess that secret.
-
-Therefore:
-
-```text
-Service A
-   │
-   └── SECRET
-
-Service B
-   │
-   └── SAME SECRET
-```
-
-If many independent services need verification, distributing the same secret becomes a key-management concern.
 
 ---
 
 # 🔴 Asymmetric Cryptography
 
-Asymmetric cryptography uses a **key pair**:
+Asymmetric cryptography uses:
 
 ```text
 Private Key
 Public Key
 ```
 
-The keys are mathematically related, but they have different responsibilities.
-
-For JWT signing:
+For JWT:
 
 ```text
 Private Key
@@ -1594,8 +1672,6 @@ Public Key
 VERIFY
 ```
 
-The public key cannot be used as a replacement for the private signing key.
-
 ---
 
 # 🔴 RSA
@@ -1616,75 +1692,22 @@ RSA
 SHA-256
 ```
 
----
-
-# 🔑 Generate RSA Private Key
-
-Example:
-
-```bash
-openssl genpkey \
-  -algorithm RSA \
-  -pkeyopt rsa_keygen_bits:3072 \
-  -out private_key.pem
-```
-
-This creates:
+Architecture:
 
 ```text
-private_key.pem
-```
-
----
-
-# 🔑 Generate RSA Public Key
-
-```bash
-openssl rsa \
-  -pubout \
-  -in private_key.pem \
-  -out public_key.pem
-```
-
-Now:
-
-```text
-private_key.pem
+RSA Private Key
        │
-       │ derives
        ▼
-public_key.pem
-```
-
----
-
-# 🔐 RSA JWT Architecture
-
-```text
-              RSA KEY PAIR
-        ┌───────────────────────┐
-        │                       │
-        │   Private Key         │
-        │   Public Key          │
-        │                       │
-        └───────────┬───────────┘
-                    │
-               JwtKeyConfig
-                    │
-          ┌─────────┴─────────┐
-          ▼                   ▼
-     PrivateKey           PublicKey
-          │                   │
-        SIGN                VERIFY
-          │                   │
-          ▼                   ▼
-     JwtService      JwtAuthenticationFilter
-          │                   │
-          ▼                   │
-         JWT ─────────────────┘
-                              │
-                              ▼
-                       SecurityContext
+      SIGN
+       │
+       ▼
+      JWT
+       │
+       ▼
+RSA Public Key
+       │
+       ▼
+     VERIFY
 ```
 
 ---
@@ -1694,8 +1717,6 @@ public_key.pem
 ECDSA stands for:
 
 > Elliptic Curve Digital Signature Algorithm
-
-It is another asymmetric digital signature algorithm.
 
 For JWT:
 
@@ -1713,106 +1734,38 @@ SHA-256
 P-256 curve
 ```
 
-Therefore:
-
-```text
-ES256 = ECDSA + SHA-256 + P-256
-```
-
----
-
-# 🔑 Generate ECDSA Private Key
-
-Using P-256:
-
-```bash
-openssl genpkey \
-  -algorithm EC \
-  -pkeyopt ec_paramgen_curve:P-256 \
-  -out private_key.pem
-```
-
----
-
-# 🔑 Generate ECDSA Public Key
-
-```bash
-openssl ec \
-  -in private_key.pem \
-  -pubout \
-  -out public_key.pem
-```
-
 Architecture:
 
 ```text
 EC Private Key
-      │
-      │ derives
-      ▼
+       │
+       ▼
+      SIGN
+       │
+       ▼
+      JWT
+       │
+       ▼
 EC Public Key
-```
-
----
-
-# 🧬 ECDSA JWT Architecture
-
-```text
-              EC KEY PAIR
-        ┌───────────────────────┐
-        │                       │
-        │   Private Key         │
-        │   Public Key          │
-        │                       │
-        └───────────┬───────────┘
-                    │
-               JwtKeyConfig
-                    │
-          ┌─────────┴─────────┐
-          ▼                   ▼
-     PrivateKey           PublicKey
-          │                   │
-        SIGN                VERIFY
-          │                   │
-          ▼                   ▼
-     JwtService      JwtAuthenticationFilter
-          │                   │
-          ▼                   │
-         JWT ─────────────────┘
-                              │
-                              ▼
-                       SecurityContext
+       │
+       ▼
+     VERIFY
 ```
 
 ---
 
 # 🆚 RSA vs ECDSA
 
-| Feature          | RSA              | ECDSA            |
-| ---------------- | ---------------- | ---------------- |
-| JWT Algorithm    | RS256            | ES256            |
-| Type             | Asymmetric       | Asymmetric       |
-| Keys             | Private + Public | Private + Public |
-| Signing          | Private key      | Private key      |
-| Verification     | Public key       | Public key       |
-| Hash             | SHA-256 in RS256 | SHA-256 in ES256 |
-| Curve            | Not applicable   | P-256            |
-| Typical key size | Larger           | Smaller          |
-| Signature size   | Larger           | Smaller          |
-| JWT support      | Very common      | Very common      |
-
-The important conceptual similarity:
-
-```text
-RSA
-Private → Sign
-Public  → Verify
-
-
-ECDSA
-Private → Sign
-Public  → Verify
-```
+| Feature        | RSA              | ECDSA            |
+| -------------- | ---------------- | ---------------- |
+| JWT Algorithm  | RS256            | ES256            |
+| Type           | Asymmetric       | Asymmetric       |
+| Keys           | Private + Public | Private + Public |
+| Signing        | Private key      | Private key      |
+| Verification   | Public key       | Public key       |
+| Hash           | SHA-256          | SHA-256          |
+| Curve          | Not applicable   | P-256            |
+| Signature size | Larger           | Smaller          |
 
 ---
 
@@ -1820,7 +1773,7 @@ Public  → Verify
 
 | Feature                   | HMAC          | RSA         | ECDSA       |
 | ------------------------- | ------------- | ----------- | ----------- |
-| JWT family                | Symmetric     | Asymmetric  | Asymmetric  |
+| Type                      | Symmetric     | Asymmetric  | Asymmetric  |
 | Example                   | HS256         | RS256       | ES256       |
 | Signing key               | Shared secret | Private key | Private key |
 | Verification key          | Same secret   | Public key  | Public key  |
@@ -1828,83 +1781,6 @@ Public  → Verify
 | Private/public pair       | No            | Yes         | Yes         |
 | Private key required      | No            | Yes         | Yes         |
 | Public key required       | No            | Yes         | Yes         |
-| Signature verification    | Shared secret | Public key  | Public key  |
-| JWT `JwtService`          | HMAC          | RSA         | ECDSA       |
-
----
-
-# 🧠 The Most Important Difference
-
-Remember this:
-
-## HMAC
-
-```text
-             SAME SECRET
-             /        \
-            ▼          ▼
-         SIGN        VERIFY
-```
-
-## RSA
-
-```text
-       PRIVATE KEY          PUBLIC KEY
-            │                   │
-          SIGN                VERIFY
-            │                   │
-            └─────── JWT ──────┘
-```
-
-## ECDSA
-
-```text
-       PRIVATE KEY          PUBLIC KEY
-            │                   │
-          SIGN                VERIFY
-            │                   │
-            └─────── JWT ──────┘
-```
-
----
-
-# 🔐 Password Hashing + JWT Signing Together
-
-These technologies solve different problems.
-
-For example, our application can use:
-
-```text
-                    APPLICATION
-                         │
-             ┌───────────┴───────────┐
-             │                       │
-             ▼                       ▼
-        PASSWORD SECURITY        JWT SECURITY
-             │                       │
-             ▼                       ▼
-           Argon2                  ES256
-             │                       │
-             ▼                       ▼
-       Password Hash            ECDSA Signature
-             │                       │
-             ▼                       ▼
-         Database                  JWT
-```
-
-Another valid architecture could be:
-
-```text
-Argon2 + RS256
-```
-
-or:
-
-```text
-Argon2 + HS256
-```
-
-The two choices are independent.
 
 ---
 
@@ -1939,42 +1815,6 @@ EC Private Key
      │
      ▼
 ES256
-     │
-     ▼
-Signed JWT
-```
-
-For RSA:
-
-```text
-UserDetails
-     │
-     ▼
-JwtService
-     │
-     ▼
-RSA Private Key
-     │
-     ▼
-RS256
-     │
-     ▼
-Signed JWT
-```
-
-For HMAC:
-
-```text
-UserDetails
-     │
-     ▼
-JwtService
-     │
-     ▼
-Shared Secret
-     │
-     ▼
-HS256
      │
      ▼
 Signed JWT
@@ -2053,7 +1893,442 @@ Authentication
       └── Authenticated
 ```
 
-The controller can then access the authenticated user.
+For RBAC, authorities are especially important:
+
+```text
+ROLE_USER
+ROLE_MODERATOR
+ROLE_ADMIN
+```
+
+---
+
+# 🛡️ Role-Based Access Control — RBAC
+
+RBAC stands for:
+
+> **Role-Based Access Control**
+
+Instead of deciding access only based on whether a user is authenticated, the application also checks the user's role.
+
+Example:
+
+```text
+User
+ │
+ ▼
+Role
+ │
+ ├── USER
+ ├── MODERATOR
+ └── ADMIN
+```
+
+Then endpoints can require specific roles.
+
+---
+
+## Example
+
+```java
+@PreAuthorize("hasRole('ADMIN')")
+```
+
+means:
+
+```text
+Required authority:
+
+ROLE_ADMIN
+```
+
+Another example:
+
+```java
+@PreAuthorize("hasAnyRole('MODERATOR','ADMIN')")
+```
+
+means:
+
+```text
+ROLE_MODERATOR OR ROLE_ADMIN
+```
+
+---
+
+# 👥 Roles and Authorities
+
+Suppose the database contains:
+
+```text
+role = USER
+```
+
+Spring Security can represent this as:
+
+```text
+ROLE_USER
+```
+
+The same mapping applies:
+
+```text
+Database Role       Spring Authority
+
+USER          →     ROLE_USER
+
+MODERATOR     →     ROLE_MODERATOR
+
+ADMIN         →     ROLE_ADMIN
+```
+
+This distinction is important because:
+
+```java
+hasRole("ADMIN")
+```
+
+automatically works with:
+
+```text
+ROLE_ADMIN
+```
+
+Whereas:
+
+```java
+hasAuthority("ROLE_ADMIN")
+```
+
+expects the complete authority name.
+
+Therefore:
+
+```java
+hasRole("ADMIN")
+```
+
+and:
+
+```java
+hasAuthority("ROLE_ADMIN")
+```
+
+are commonly equivalent.
+
+Avoid:
+
+```java
+hasRole("ROLE_ADMIN")
+```
+
+because Spring's role prefix handling can result in an incorrect authority expectation.
+
+---
+
+# 🔒 Method-Level Security
+
+This project uses:
+
+```java
+@EnableMethodSecurity
+```
+
+to enable annotations such as:
+
+```java
+@PreAuthorize(...)
+```
+
+Example:
+
+```java
+@GetMapping("/moderation")
+@PreAuthorize("hasAnyRole('MODERATOR','ADMIN')")
+public ResponseEntity<ApiResponse<?>> getModerationPanel() {
+    ...
+}
+```
+
+Without:
+
+```java
+@EnableMethodSecurity
+```
+
+the `@PreAuthorize` annotation will not enforce the role check.
+
+---
+
+# 🧩 Current RBAC Rules
+
+The current user controller demonstrates:
+
+```text
+Endpoint                              USER   MODERATOR   ADMIN
+----------------------------------------------------------------
+GET    /user/profile                  ✅       ✅         ✅
+PUT    /user/profile                  ✅       ✅         ✅
+GET    /user/dashboard                ✅       ✅         ✅
+GET    /user/moderation               ❌       ✅         ✅
+DELETE /user/comments/{commentId}     ❌       ✅         ✅
+GET    /user/admin/reports            ❌       ❌         ✅
+```
+
+Example:
+
+```java
+@PreAuthorize("hasAnyRole('MODERATOR','ADMIN')")
+```
+
+allows:
+
+```text
+ROLE_MODERATOR
+ROLE_ADMIN
+```
+
+but denies:
+
+```text
+ROLE_USER
+```
+
+---
+
+# 🚨 Authentication vs Authorization Errors
+
+One of the most important RBAC concepts is the difference between:
+
+```text
+401 Unauthorized
+```
+
+and:
+
+```text
+403 Forbidden
+```
+
+---
+
+## 401 Unauthorized
+
+Means the request is not successfully authenticated.
+
+Examples:
+
+```text
+No JWT
+Invalid JWT
+Expired JWT
+Missing authentication
+```
+
+Spring Security uses:
+
+```text
+AuthenticationEntryPoint
+```
+
+The project uses:
+
+```text
+CustomAuthenticationEntryPoint
+```
+
+Flow:
+
+```text
+Request
+   │
+   ▼
+Authentication required
+   │
+   ▼
+Authentication failed/missing
+   │
+   ▼
+CustomAuthenticationEntryPoint
+   │
+   ▼
+401
+```
+
+Example response:
+
+```json
+{
+    "success": false,
+    "message": "Authentication required",
+    "data": null
+}
+```
+
+---
+
+# 🚫 403 Forbidden
+
+A `403 Forbidden` is different.
+
+It means:
+
+> The user is authenticated, but does not have sufficient authorization.
+
+Example:
+
+```text
+USER
+ │
+ ▼
+ROLE_USER
+ │
+ ▼
+DELETE /user/comments/10
+ │
+ ▼
+Requires MODERATOR or ADMIN
+ │
+ ▼
+AccessDeniedException
+ │
+ ▼
+CustomAccessDeniedHandler
+ │
+ ▼
+403
+```
+
+Example response:
+
+```json
+{
+    "success": false,
+    "message": "You do not have permission to access this resource",
+    "data": null
+}
+```
+
+The custom handler can also log:
+
+```text
+403 FORBIDDEN | method=DELETE | uri=/user/comments/10
+```
+
+---
+
+# 🔄 401 vs 403
+
+The easiest way to remember:
+
+```text
+401
+ ↓
+"I don't know who you are."
+
+403
+ ↓
+"I know who you are,
+but you are not allowed to do this."
+```
+
+Architecture:
+
+```text
+                     REQUEST
+                        │
+                        ▼
+                 Authentication
+                        │
+                ┌───────┴───────┐
+                │               │
+             Failure          Success
+                │               │
+                ▼               ▼
+               401         Authorization
+                                 │
+                         ┌───────┴───────┐
+                         │               │
+                       Allowed         Denied
+                         │               │
+                         ▼               ▼
+                    Controller          403
+```
+
+---
+
+# 👑 Role Assignment
+
+A very important security rule is:
+
+> **Users should not normally choose their own privileged role during registration.**
+
+Normal registration:
+
+```text
+POST /auth/register
+
+username
+password
+```
+
+Server:
+
+```text
+role = USER
+```
+
+Therefore:
+
+```text
+New Registration
+       │
+       ▼
+USER
+```
+
+A malicious client should not be able to send:
+
+```json
+{
+    "username": "attacker",
+    "password": "password",
+    "role": "ADMIN"
+}
+```
+
+and become an administrator.
+
+---
+
+## How does an ADMIN get created?
+
+Privileged roles should be assigned through a controlled mechanism.
+
+For example:
+
+```text
+Existing ADMIN
+      │
+      ▼
+Protected Admin API
+      │
+      ▼
+Change user's role
+      │
+      ▼
+USER → MODERATOR
+USER → ADMIN
+MODERATOR → USER
+```
+
+The role-management endpoint itself should be protected:
+
+```java
+@PreAuthorize("hasRole('ADMIN')")
+```
+
+This creates a security boundary around role assignment.
 
 ---
 
@@ -2089,7 +2364,14 @@ PasswordEncoder
 Argon2
         │
         ▼
-Authentication SUCCESS
+Password Verification
+        │
+        ├── FAIL → Authentication Failure
+        │
+        └── SUCCESS
+                │
+                ▼
+          Authentication
 ```
 
 ---
@@ -2155,7 +2437,10 @@ Signature Valid?
    ├── NO
    │    │
    │    ▼
-   │   401 Unauthorized
+   │   Authentication Failure
+   │    │
+   │    ▼
+   │   401
    │
    └── YES
         │
@@ -2166,7 +2451,74 @@ Signature Valid?
    SecurityContext
         │
         ▼
-    Controller
+   Authorization
+        │
+        ▼
+   Controller
+```
+
+---
+
+# 🔐 Complete RBAC Request Architecture
+
+This is the complete flow now implemented by the project:
+
+```text
+Client
+   │
+   │ Authorization: Bearer <JWT>
+   ▼
+Spring Security Filter Chain
+   │
+   ▼
+JwtAuthenticationFilter
+   │
+   ▼
+JwtService
+   │
+   ▼
+JWT Signature Verification
+   │
+   ▼
+Authentication
+   │
+   ▼
+SecurityContext
+   │
+   ├── Principal
+   └── Authorities
+           │
+           ├── ROLE_USER
+           ├── ROLE_MODERATOR
+           └── ROLE_ADMIN
+   │
+   ▼
+Controller Method
+   │
+   ▼
+@PreAuthorize
+   │
+   ▼
+Authorization Decision
+   │
+   ├── Allowed
+   │     │
+   │     ▼
+   │   Controller
+   │     │
+   │     ▼
+   │    200
+   │
+   └── Denied
+         │
+         ▼
+   AccessDeniedException
+         │
+         ▼
+   CustomAccessDeniedHandler
+         │
+         ▼
+        403
 ```
 
 ---
@@ -2187,9 +2539,9 @@ Client
 Server
 ```
 
-Each request carries the information required to authenticate the request.
+Each request carries a token that can be validated by the server.
 
-However, stateless JWT authentication does **not** automatically solve:
+However, stateless JWT authentication does **not automatically solve**:
 
 * token revocation
 * stolen-token handling
@@ -2197,7 +2549,7 @@ However, stateless JWT authentication does **not** automatically solve:
 * logout invalidation
 * token rotation
 
-Those are separate architectural concerns.
+These are separate architectural concerns.
 
 ---
 
@@ -2230,8 +2582,6 @@ Never create claims such as:
 }
 ```
 
-JWT claims should contain only the information actually required by the application.
-
 ---
 
 ## 3. Never expose asymmetric private keys
@@ -2250,29 +2600,17 @@ EC Private Key
 
 must remain private.
 
-```text
-Backend
-  │
-  └── private_key.pem
-```
-
-Do not send it to the frontend.
-
 ---
 
-## 4. HMAC secret must also remain secret
+## 4. HMAC secret must remain secret
 
-HMAC does not have a public key.
-
-Instead:
+HMAC uses:
 
 ```text
 Shared Secret
 ```
 
-must remain secret.
-
-Anyone possessing the HMAC secret can potentially create valid signatures.
+Anyone possessing the secret can potentially create valid signatures.
 
 ---
 
@@ -2286,43 +2624,98 @@ It does not mean:
 Payload = encrypted
 ```
 
-Do not put confidential information into a normal signed JWT simply because it is encoded.
+Do not put confidential information into normal signed JWT claims simply because the token is encoded.
+
+---
+
+## 6. Never allow normal registration to choose ADMIN
+
+Bad:
+
+```json
+{
+    "username": "rajat",
+    "password": "password",
+    "role": "ADMIN"
+}
+```
+
+Good:
+
+```text
+Registration
+     │
+     ▼
+Server assigns USER
+```
+
+Privileged roles should be assigned through controlled administrative operations.
+
+---
+
+## 7. Do not confuse authentication with authorization
+
+```text
+JWT valid
+    ≠
+Access automatically allowed
+```
+
+A valid JWT proves/establishes authentication.
+
+RBAC determines whether the authenticated user is allowed to access a particular operation.
+
+---
+
+## 8. Do not confuse 401 and 403
+
+```text
+401 → Authentication problem
+
+403 → Authorization problem
+```
 
 ---
 
 # 🧩 Complete Component Reference
 
-| Component                   | Responsibility                           |
-| --------------------------- | ---------------------------------------- |
-| `SecurityConfig`            | Configures Spring Security               |
-| `JwtKeyConfig`              | Loads/configures cryptographic keys      |
-| `AuthController`            | Handles authentication HTTP endpoints    |
-| `AuthService`               | Defines authentication operations        |
-| `AuthServiceImpl`           | Implements authentication operations     |
-| `LoginRequestDTO`           | Carries login request data               |
-| `LoginResponseDTO`          | Carries login response data              |
-| `UserEntity`                | Represents database user                 |
-| `UserRepository`            | Communicates with database               |
-| `CustomUserDetailsService`  | Loads users for Spring Security          |
-| `UserDetails`               | Spring Security representation of a user |
-| `DaoAuthenticationProvider` | Authenticates username/password          |
-| `AuthenticationManager`     | Coordinates authentication               |
-| `PasswordEncoder`           | Password hashing/verifying abstraction   |
-| `BCryptPasswordEncoder`     | BCrypt password hashing                  |
-| `SCryptPasswordEncoder`     | SCrypt password hashing                  |
-| `Argon2PasswordEncoder`     | Argon2 password hashing                  |
-| `JwtService`                | Creates/verifies JWTs                    |
-| `JwtAuthenticationFilter`   | Processes JWTs on requests               |
-| `SecurityContext`           | Stores current request authentication    |
-| `private_key.pem`           | Signs asymmetric JWTs                    |
-| `public_key.pem`            | Verifies asymmetric JWTs                 |
-| HMAC secret                 | Signs/verifies HMAC JWTs                 |
+| Component                        | Responsibility                                                  |
+| -------------------------------- | --------------------------------------------------------------- |
+| `SecurityConfig`                 | Configures Spring Security                                      |
+| `JwtKeyConfig`                   | Loads/configures cryptographic keys                             |
+| `AuthController`                 | Handles authentication HTTP endpoints                           |
+| `UserController`                 | Demonstrates protected RBAC endpoints                           |
+| `AuthService`                    | Defines authentication operations                               |
+| `AuthServiceImpl`                | Implements authentication operations                            |
+| `LoginRequestDTO`                | Carries login request data                                      |
+| `LoginResponseDTO`               | Carries login response data                                     |
+| `UserEntity`                     | Represents database user                                        |
+| `UserRepository`                 | Communicates with database                                      |
+| `CustomUserDetailsService`       | Loads users for Spring Security                                 |
+| `UserDetails`                    | Spring Security representation of a user                        |
+| `DaoAuthenticationProvider`      | Authenticates username/password                                 |
+| `AuthenticationManager`          | Coordinates authentication                                      |
+| `PasswordEncoder`                | Password hashing/verifying abstraction                          |
+| `BCryptPasswordEncoder`          | BCrypt password hashing                                         |
+| `SCryptPasswordEncoder`          | SCrypt password hashing                                         |
+| `Argon2PasswordEncoder`          | Argon2 password hashing                                         |
+| `JwtService`                     | Creates/verifies JWTs                                           |
+| `JwtAuthenticationFilter`        | Processes JWTs on requests                                      |
+| `SecurityContext`                | Stores current request authentication                           |
+| `CustomAuthenticationEntryPoint` | Handles `401 Unauthorized`                                      |
+| `CustomAccessDeniedHandler`      | Handles `403 Forbidden`                                         |
+| `@EnableMethodSecurity`          | Enables method-level authorization                              |
+| `@PreAuthorize`                  | Performs authorization before method execution                  |
+| `private_key.pem`                | Signs asymmetric JWTs                                           |
+| `public_key.pem`                 | Verifies asymmetric JWTs                                        |
+| HMAC secret                      | Signs/verifies HMAC JWTs                                        |
+| Bouncy Castle                    | Provides cryptographic classes required by Argon2 in this setup |
 
 ---
 
 # 🧠 Three Layers of Security
 
-It is useful to think about the application as three separate layers.
+It is useful to think about the application as three major layers.
 
 ## Layer 1 — Password Security
 
@@ -2364,7 +2757,7 @@ Authentication
 
 ---
 
-## Layer 3 — Token Security
+## Layer 3 — Token + Authorization
 
 ```text
 Authentication
@@ -2377,9 +2770,22 @@ HMAC / RSA / ECDSA
       │
       ▼
 JWT
+      │
+      ▼
+JwtAuthenticationFilter
+      │
+      ▼
+SecurityContext
+      │
+      ▼
+Roles / Authorities
+      │
+      ▼
+@PreAuthorize
+      │
+      ▼
+Authorization Decision
 ```
-
-This separation makes Spring Security much easier to understand.
 
 ---
 
@@ -2388,26 +2794,26 @@ This separation makes Spring Security much easier to understand.
 ```text
                          SPRING SECURITY
                                │
-          ┌────────────────────┼────────────────────┐
-          │                    │                    │
-          ▼                    ▼                    ▼
-     Passwords            Authentication           JWT
-          │                    │                    │
-          ▼                    ▼                    ▼
-   PasswordEncoder      AuthenticationManager   JwtService
-          │                    │                    │
-     ┌────┼────┐              ▼              ┌─────┼─────┐
-     │    │    │       DaoAuthentication      │     │     │
-     ▼    ▼    ▼          Provider            ▼     ▼     ▼
- BCrypt SCrypt Argon2          │            HMAC   RSA  ECDSA
-                               │
-                               ▼
-                    CustomUserDetailsService
-                               │
-                               ▼
-                         UserRepository
-                               │
-                               ▼
+       ┌───────────────────────┼───────────────────────┐
+       │                       │                       │
+       ▼                       ▼                       ▼
+  Password Security       Authentication          Authorization
+       │                       │                       │
+       ▼                       ▼                       ▼
+PasswordEncoder       AuthenticationManager         RBAC
+       │                       │                       │
+  ┌────┼────┐                 ▼                  ┌────┼────┐
+  │    │    │        DaoAuthentication            │    │    │
+  ▼    ▼    ▼           Provider                  ▼    ▼    ▼
+BCrypt SCrypt Argon2          │                 USER MOD ADMIN
+                              │
+                              ▼
+                   CustomUserDetailsService
+                              │
+                              ▼
+                        UserRepository
+                              │
+                              ▼
                            Database
 ```
 
@@ -2415,7 +2821,7 @@ This separation makes Spring Security much easier to understand.
 
 # 🧠 Most Important Concept
 
-There are two different cryptographic purposes in this project.
+There are multiple independent security concerns in this project.
 
 ## Password Hashing
 
@@ -2432,7 +2838,7 @@ Hash
 Database
 ```
 
-This protects stored passwords.
+Protects stored passwords.
 
 ---
 
@@ -2448,38 +2854,43 @@ HMAC / RSA / ECDSA
 Signature
 ```
 
-This protects the integrity/authenticity of the token.
+Protects JWT integrity/authenticity.
+
+---
+
+## Authorization
+
+```text
+Authenticated User
+       │
+       ▼
+Role / Authority
+       │
+       ▼
+Authorization Rule
+       │
+       ▼
+Allowed / Forbidden
+```
+
+Controls what the authenticated user can access.
 
 ---
 
 # 🔥 Final Comparison
 
-| Technology | Category                | Purpose                  | Key Type                   |
-| ---------- | ----------------------- | ------------------------ | -------------------------- |
-| BCrypt     | Password hashing        | Store/verify passwords   | Salt + internal parameters |
-| SCrypt     | Password hashing        | Store/verify passwords   | Salt + parameters          |
-| Argon2     | Password hashing        | Store/verify passwords   | Salt + parameters          |
-| HMAC       | Symmetric cryptography  | JWT signing/verification | Shared secret              |
-| RSA        | Asymmetric cryptography | JWT signing/verification | Private + Public           |
-| ECDSA      | Asymmetric cryptography | JWT signing/verification | Private + Public           |
-
-The most important distinction:
-
-```text
-             PASSWORD SECURITY
-                    │
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-      BCrypt      SCrypt      Argon2
-
-
-               JWT SECURITY
-                    │
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-       HMAC        RSA         ECDSA
-     Symmetric   Asymmetric   Asymmetric
-```
+| Technology                 | Category                | Purpose                       | Key / Security Information |
+| -------------------------- | ----------------------- | ----------------------------- | -------------------------- |
+| BCrypt                     | Password hashing        | Store/verify passwords        | Salt + parameters          |
+| SCrypt                     | Password hashing        | Store/verify passwords        | Salt + parameters          |
+| Argon2                     | Password hashing        | Store/verify passwords        | Salt + parameters          |
+| HMAC                       | Symmetric cryptography  | JWT signing/verification      | Shared secret              |
+| RSA                        | Asymmetric cryptography | JWT signing/verification      | Private + Public key       |
+| ECDSA                      | Asymmetric cryptography | JWT signing/verification      | Private + Public key       |
+| RBAC                       | Authorization           | Control resource access       | Roles/authorities          |
+| `@PreAuthorize`            | Method security         | Enforce authorization rules   | Spring authorities         |
+| `AuthenticationEntryPoint` | Exception handling      | Handle authentication failure | 401                        |
+| `AccessDeniedHandler`      | Exception handling      | Handle authorization failure  | 403                        |
 
 ---
 
@@ -2506,36 +2917,54 @@ For understanding this project properly:
        ↓
 9. Argon2
        ↓
-10. DaoAuthenticationProvider
+10. Bouncy Castle Dependency
        ↓
-11. AuthenticationManager
+11. DaoAuthenticationProvider
        ↓
-12. SecurityConfig
+12. AuthenticationManager
        ↓
-13. Authentication
+13. SecurityConfig
        ↓
-14. JWT
+14. Authentication
        ↓
-15. HMAC
+15. JWT
        ↓
-16. RSA
+16. HMAC
        ↓
-17. ECDSA
+17. RSA
        ↓
-18. JwtService
+18. ECDSA
        ↓
-19. JwtAuthenticationFilter
+19. JwtService
        ↓
-20. SecurityContext
+20. JwtAuthenticationFilter
        ↓
-21. Stateless Authentication
+21. SecurityContext
+       ↓
+22. Roles
+       ↓
+23. Authorities
+       ↓
+24. RBAC
+       ↓
+25. @EnableMethodSecurity
+       ↓
+26. @PreAuthorize
+       ↓
+27. 401 vs 403
+       ↓
+28. Custom Exception Handling
+       ↓
+29. Role Management
+       ↓
+30. Permission-Based Authorization
 ```
 
 ---
 
 # 🧠 Final Mental Model
 
-If you remember only one diagram from this project, remember this:
+If you remember only one architecture from this project, remember this:
 
 ```text
                          USER
@@ -2549,98 +2978,123 @@ If you remember only one diagram from this project, remember this:
               ┌───────────┼───────────┐
               ▼           ▼           ▼
            BCrypt       SCrypt      Argon2
-              │           │           │
-              └───────────┼───────────┘
-                          │
-                          ▼
-                      Password Hash
-                          │
-                          ▼
-                       DATABASE
-                          │
-                          │
-                          ▼
-                         LOGIN
-                          │
-                          ▼
-                 AuthenticationManager
-                          │
-                          ▼
-                DaoAuthenticationProvider
-                          │
-                          ▼
-                CustomUserDetailsService
-                          │
-                          ▼
-                    UserRepository
-                          │
-                          ▼
-                       Database
-                          │
-                          ▼
-                      UserDetails
-                          │
-                          ▼
-                   PasswordEncoder
-                          │
-                          ▼
-                   Password Verification
-                          │
-                    ┌─────┴─────┐
-                    │           │
-                   NO          YES
-                    │           │
-                    ▼           ▼
-                  401      Authentication
-                                │
-                                ▼
-                            JwtService
-                                │
-                ┌───────────────┼───────────────┐
-                │               │               │
-                ▼               ▼               ▼
-              HMAC             RSA            ECDSA
-                │               │               │
-          Shared Secret     Private Key     Private Key
-                │               │               │
-                └───────────────┼───────────────┘
-                                │
-                                ▼
-                              JWT
-                                │
-                                ▼
-                              CLIENT
-                                │
-                                │
-                     Authorization: Bearer JWT
-                                │
-                                ▼
-                    JwtAuthenticationFilter
-                                │
-                                ▼
-                         JwtService
-                                │
-                ┌───────────────┼───────────────┐
-                │               │               │
-                ▼               ▼               ▼
-          Shared Secret     Public Key      Public Key
-             (HMAC)           (RSA)          (ECDSA)
-                │               │               │
-                └───────────────┼───────────────┘
-                                │
-                                ▼
-                       Signature Valid?
-                          /           \
-                        NO             YES
-                        │               │
-                        ▼               ▼
-                  401 Unauthorized   Authentication
-                                        │
-                                        ▼
-                                  SecurityContext
-                                        │
-                                        ▼
-                                    Controller
+                                      │
+                                      ▼
+                              Bouncy Castle
+                          (required dependency
+                           in this setup)
+                                      │
+                                      ▼
+                               Password Hash
+                                      │
+                                      ▼
+                                  DATABASE
+                                      │
+                                      │
+                                      ▼
+                                     LOGIN
+                                      │
+                                      ▼
+                             AuthenticationManager
+                                      │
+                                      ▼
+                            DaoAuthenticationProvider
+                                      │
+                                      ▼
+                            CustomUserDetailsService
+                                      │
+                                      ▼
+                                UserRepository
+                                      │
+                                      ▼
+                                  Database
+                                      │
+                                      ▼
+                                 UserDetails
+                                      │
+                                      ├── Username
+                                      ├── Password
+                                      └── Role
+                                           │
+                                           ▼
+                                      Authorities
+                                           │
+                                           ├── ROLE_USER
+                                           ├── ROLE_MODERATOR
+                                           └── ROLE_ADMIN
+                                      │
+                                      ▼
+                              Password Verification
+                                      │
+                               ┌──────┴──────┐
+                               │             │
+                              NO            YES
+                               │             │
+                               ▼             ▼
+                       Authentication   Authentication
+                           Failure          Success
+                               │             │
+                               ▼             ▼
+                              401        JwtService
+                                             │
+                                             ▼
+                                      JWT Signing
+                                             │
+                              ┌──────────────┼──────────────┐
+                              │              │              │
+                              ▼              ▼              ▼
+                            HMAC            RSA           ECDSA
+                              │              │              │
+                         Secret Key     Private Key    Private Key
+                              │              │              │
+                              └──────────────┼──────────────┘
+                                             │
+                                             ▼
+                                            JWT
+                                             │
+                                             ▼
+                                           CLIENT
+                                             │
+                                             │
+                              Authorization: Bearer JWT
+                                             │
+                                             ▼
+                                  JwtAuthenticationFilter
+                                             │
+                                             ▼
+                                         JwtService
+                                             │
+                                             ▼
+                                    Signature Verification
+                                             │
+                              ┌──────────────┴──────────────┐
+                              │                             │
+                             NO                            YES
+                              │                             │
+                              ▼                             ▼
+                         401 Unauthorized             Authentication
+                         EntryPoint                       │
+                                                          ▼
+                                                   SecurityContext
+                                                          │
+                                                          ▼
+                                                   Authorization
+                                                          │
+                                                          ▼
+                                                   @PreAuthorize
+                                                          │
+                                             ┌────────────┴────────────┐
+                                             │                         │
+                                          Allowed                    Denied
+                                             │                         │
+                                             ▼                         ▼
+                                        Controller            AccessDeniedException
+                                             │                         │
+                                             ▼                         ▼
+                                           200                  CustomAccessDeniedHandler
+                                                                       │
+                                                                       ▼
+                                                                      403
 ```
 
 ---
@@ -2673,11 +3127,25 @@ Uses BCrypt for password hashing.
 
 ### `SCryptPasswordEncoder`
 
-Uses SCrypt for password hashing with memory-hard characteristics.
+Uses SCrypt for memory-hard password hashing.
 
 ### `Argon2PasswordEncoder`
 
 Uses Argon2 for modern memory-hard password hashing.
+
+### Bouncy Castle
+
+Provides cryptographic classes required by the Argon2 implementation used in this project.
+
+Dependency:
+
+```xml
+<dependency>
+    <groupId>org.bouncycastle</groupId>
+    <artifactId>bcprov-jdk18on</artifactId>
+    <version>1.86</version>
+</dependency>
+```
 
 ### `JwtService`
 
@@ -2703,6 +3171,42 @@ Reads and validates JWTs from incoming requests.
 
 Stores authentication information for the current request.
 
+### RBAC
+
+Controls access to application resources based on user roles.
+
+Current roles:
+
+```text
+USER
+MODERATOR
+ADMIN
+```
+
+### `@PreAuthorize`
+
+Performs authorization checks before a controller/service method executes.
+
+Examples:
+
+```java
+@PreAuthorize("hasRole('ADMIN')")
+```
+
+and:
+
+```java
+@PreAuthorize("hasAnyRole('MODERATOR','ADMIN')")
+```
+
+### `AuthenticationEntryPoint`
+
+Handles authentication failures and produces `401 Unauthorized`.
+
+### `AccessDeniedHandler`
+
+Handles authorization failures and produces `403 Forbidden`.
+
 ### Private Key
 
 Signs asymmetric JWTs.
@@ -2717,7 +3221,7 @@ Verifies asymmetric JWT signatures.
 
 This repository is intentionally built as a **Spring Security learning project**.
 
-The goal is to understand the complete authentication pipeline:
+The goal is to understand the complete security pipeline:
 
 ```text
 Database
@@ -2740,6 +3244,12 @@ Signature Verification
    ↓
 SecurityContext
    ↓
+Roles / Authorities
+   ↓
+RBAC
+   ↓
+@PreAuthorize
+   ↓
 Protected Controller
 ```
 
@@ -2751,6 +3261,8 @@ PASSWORD SECURITY
         ├── BCrypt
         ├── SCrypt
         └── Argon2
+                  │
+                  └── Bouncy Castle
 
 
 JWT SECURITY
@@ -2758,6 +3270,13 @@ JWT SECURITY
         ├── HMAC
         ├── RSA
         └── ECDSA
+
+
+AUTHORIZATION
+        │
+        ├── USER
+        ├── MODERATOR
+        └── ADMIN
 ```
 
 The most important thing is to understand **why each component exists, what problem it solves, and who calls it**, rather than memorizing Spring Security configuration from tutorials.
