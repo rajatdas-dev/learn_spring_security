@@ -1,5 +1,6 @@
 package com.example.spring_security_demo.config;
 
+import com.example.spring_security_demo.security.CustomAccessDeniedHandler;
 import com.example.spring_security_demo.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -8,18 +9,22 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.scrypt.SCryptPasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Autowired
@@ -78,24 +83,27 @@ public class SecurityConfig {
     
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity httpSecurity
+            HttpSecurity httpSecurity,
+            CustomAccessDeniedHandler accessDeniedHandler,
+            AuthenticationEntryPoint authenticationEntryPoint
     ) throws  Exception{
         
        return httpSecurity.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Login/Register doesn't require authentication
                         .requestMatchers("/auth/**").permitAll()
-                        
-                        // Admin apis
                         .requestMatchers("/admin/**").hasRole("ADMIN")
-                        
-                        // User Apis
-                        .requestMatchers("/users/**").hasRole("USER")
-                        
                         // Everything else requires authentication
                         .anyRequest()
                         .authenticated())
         
+               .exceptionHandling(exception -> exception
+                       .accessDeniedHandler(accessDeniedHandler)
+                       .authenticationEntryPoint(authenticationEntryPoint))
+               
+               .sessionManagement(session -> session.sessionCreationPolicy(
+                       SessionCreationPolicy.STATELESS
+               ))
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class

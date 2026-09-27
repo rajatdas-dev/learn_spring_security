@@ -25,7 +25,6 @@ public class UserEntity {
     private String password;
     
     @Column(nullable = false)
-    @Value("USER")
     private String role;
 
 }

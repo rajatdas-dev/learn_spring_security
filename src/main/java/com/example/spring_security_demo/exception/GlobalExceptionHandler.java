@@ -22,6 +22,12 @@ public class GlobalExceptionHandler {
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
+
+        log.error("Resource Not Found",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception);
+        
         return buildResponse(
                 exception.getStatus(),
                 exception.getErrorCode(),
@@ -35,6 +41,13 @@ public class GlobalExceptionHandler {
             InvalidCredentialException exception,
             HttpServletRequest request
     ){
+        
+        log.error("Invalid Credentials",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception);
+        
+        
         return buildResponse(
                 exception.getStatus(),
                 exception.getErrorCode(),
