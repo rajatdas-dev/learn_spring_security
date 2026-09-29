@@ -11,4 +11,6 @@ public enum ErrorCode {
     FORBIDDEN,
     INVALID_CREDENTIALS,
     USER_NOT_FOUND,
+    
+    NOT_FOUND,
 }

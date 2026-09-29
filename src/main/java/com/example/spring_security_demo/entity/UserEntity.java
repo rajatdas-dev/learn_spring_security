@@ -26,5 +26,25 @@ public class UserEntity {
     
     @Column(nullable = false)
     private String role;
+    
+    // ABAC subject attributes
+    @Column
+    private String department;
+    
+    // Safe profile attribute 
+    @Column
+    private String displayName;
+    
+    @PrePersist
+    public void applyDefault(){
+        
+        if(role == null || role.isBlank()){
+            role = "USER";
+        }
+        
+        if(department == null || department.isBlank()){
+            department = "GENERAL";
+        }
+    }
 
 }
