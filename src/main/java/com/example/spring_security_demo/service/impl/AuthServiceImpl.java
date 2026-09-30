@@ -58,7 +58,15 @@ public class AuthServiceImpl implements AuthService {
         UserEntity userEntity = new UserEntity();
         userEntity.setUsername(loginRequestDTO.getUsername());
         userEntity.setPassword(passwordEncoder.encode(loginRequestDTO.getPassword()));
+        
+        // Never accept role from registration
         userEntity.setRole("USER");
+        
+        // Default ABAC department 
+        // An Admin can later change this 
+        
+        userEntity.setDepartment("GENERAL");
+        
         return userEntity;
     }
 }

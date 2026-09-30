@@ -6,6 +6,7 @@ import com.example.spring_security_demo.response.ApiResponse;
 import com.example.spring_security_demo.security.JwtService;
 import com.example.spring_security_demo.service.AuthService;
 import com.example.spring_security_demo.service.impl.AuthServiceImpl;
+import jakarta.validation.Valid;
 import org.apache.catalina.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,17 +23,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/auth")
 public class AuthController {
     
-    @Autowired
-    private AuthenticationManager authenticationManager;
-    
-    @Autowired
-    private JwtService jwtService;
-    
+//    @Autowired
+//    private AuthenticationManager authenticationManager;
+//    
+//    @Autowired
+//    private JwtService jwtService;
+//    
     @Autowired
     private AuthService authService;
     
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<Void>> register(
+            @Valid
             @RequestBody LoginRequestDTO loginRequestDTO
     ){
      
@@ -40,8 +42,7 @@ public class AuthController {
         
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        "Registration Successfull",
-                        null
+                        "Registration Successfull"
                 )
         );
     }
