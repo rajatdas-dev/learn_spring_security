@@ -436,14 +436,15 @@ openssl rsa \
 -in private_key.pem \
 -out public_key.pem
 ```
+### 🔑 Key Relationship
 
-Now:
-
+```text
 private_key.pem
-│
-│ derives
-▼
+      │
+      │ derives
+      ▼
 public_key.pem
+```
 
 Inspect the private key:
 
