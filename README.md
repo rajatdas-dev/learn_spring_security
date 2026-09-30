@@ -64,15 +64,19 @@ The project currently covers:
 32. [Roles and Authorities](#-roles-and-authorities)
 33. [Method-Level Security](#-method-level-security)
 34. [Role Assignment](#-role-assignment)
-35. [Custom 401 and 403 Exception Handling](#-custom-401-and-403-exception-handling)
-36. [Complete Login Architecture](#-complete-login-architecture)
-37. [Complete JWT Request Architecture](#-complete-jwt-request-architecture)
-38. [Complete RBAC Request Architecture](#-complete-rbac-request-architecture)
-39. [Stateless Authentication](#-stateless-authentication)
-40. [Important Security Rules](#-important-security-rules)
-41. [Complete Component Reference](#-complete-component-reference)
-42. [Learning Order](#-learning-order)
-43. [Final Mental Model](#-final-mental-model)
+35. [Hybrid RBAC + ABAC](#-hybrid-rbac--abac)
+36. [ABAC for User Management](#-abac-for-user-management)
+37. [ABAC for Documents](#-abac-for-documents)
+38. [RSA and ECDSA Key Generation](#-rsa-and-ecdsa-key-generation)
+39. [Custom 401 and 403 Exception Handling](#-custom-401-and-403-exception-handling)
+40. [Complete Login Architecture](#-complete-login-architecture)
+41. [Complete JWT Request Architecture](#-complete-jwt-request-architecture)
+42. [Complete RBAC Request Architecture](#-complete-rbac-request-architecture)
+43. [Stateless Authentication](#-stateless-authentication)
+44. [Important Security Rules](#-important-security-rules)
+45. [Complete Component Reference](#-complete-component-reference)
+46. [Learning Order](#-learning-order)
+47. [Final Mental Model](#-final-mental-model)
 
 ---
 
@@ -220,6 +224,373 @@ Authorization
 ```
 
 These are separate security mechanisms.
+
+---
+
+# 🔐 Hybrid RBAC + ABAC
+
+The project uses a **hybrid authorization model**. RBAC provides the coarse-grained authorization boundary, while ABAC evaluates the context of a specific operation using the **subject**, **resource**, **action**, and optional **environment** attributes.
+
+```text
+Authenticated Request
+        │
+        ▼
+JWT verified
+        │
+        ▼
+SecurityContext
+        │
+        ▼
+RBAC check
+(role / authority)
+        │
+        ├── Denied ───────────────► 403
+        │
+        ▼
+ABAC policy
+(subject + resource + action + environment)
+        │
+        ├── Denied ───────────────► 403
+        │
+        ▼
+Controller / Service
+```
+
+### RBAC vs ABAC
+
+RBAC answers whether a role is allowed to attempt an operation. ABAC answers whether this particular subject is allowed to perform the operation against this particular resource under the current policy.
+
+```text
+RBAC
+ ├── USER
+ ├── MODERATOR
+ └── ADMIN
+
+ABAC
+ ├── subject attributes   → username, role, department, ownership
+ ├── resource attributes  → owner, department, classification
+ ├── action               → READ, UPDATE, DELETE
+ └── environment          → optional context such as time
+```
+
+A role is therefore not the only authorization attribute. For example, a `USER` can be allowed to read their own document while being denied access to another user's document.
+
+---
+
+# 👥 ABAC for User Management
+
+User management remains protected by RBAC, with ABAC providing a place for target-resource and policy checks.
+
+The role-management endpoint is:
+
+```http
+PATCH /admin/users/update/role
+```
+
+Its baseline boundary is:
+
+```java
+@PreAuthorize("hasRole('ADMIN')")
+```
+
+The caller's role must come from the authenticated server-side identity. The target user must be loaded from the database. Client input must not be able to grant the caller or another user an authority merely by submitting a role value.
+
+Conceptually:
+
+```text
+Subject: authenticated caller
+Resource: target UserEntity
+Action: UPDATE_ROLE
+
+Policy:
+ADMIN + permitted target + permitted role transition
+                     │
+                     ▼
+                  ALLOW / DENY
+```
+
+Future attribute rules can include protected/system accounts, administrative scope, permitted role transitions, and audit information describing who changed whose role.
+
+Public registration must continue to assign `USER` server-side. A public request must never be trusted to choose `ADMIN` or `MODERATOR`.
+
+---
+
+# 📄 ABAC for Documents
+
+Documents are the main resource used to demonstrate object-level ABAC. A document can contain attributes such as:
+
+```text
+Document
+├── id
+├── title
+├── content
+├── ownerUsername
+├── department
+├── classification
+└── createdAt
+```
+
+The policy evaluates:
+
+```text
+Subject      → username / role / department
+Resource     → owner / department / classification
+Action       → READ / UPDATE / DELETE
+Environment  → optional request context
+```
+
+A representative policy is:
+
+```text
+READ
+ ├── ADMIN                 → allowed
+ ├── MODERATOR             → allowed according to policy
+ ├── OWNER                 → allowed
+ └── otherwise             → denied
+
+UPDATE
+ ├── ADMIN                 → allowed
+ ├── OWNER                 → allowed
+ └── otherwise             → denied
+
+DELETE
+ ├── ADMIN                 → allowed
+ ├── OWNER                 → allowed according to policy
+ └── otherwise             → denied
+```
+
+A policy component can be called from method security:
+
+```java
+@PreAuthorize("@documentAccessPolicy.canRead(authentication, #id)")
+```
+
+The policy should load the target resource from the database and make its decision using server-side attributes. Missing resources or missing attributes should fail closed rather than being treated as allowed.
+
+### Never trust ownership from the request body
+
+When creating a document, derive ownership from the authenticated principal:
+
+```java
+String username = authentication.getName();
+document.setOwnerUsername(username);
+```
+
+Do not use a client-supplied `ownerUsername` as the security authority for ownership. Otherwise, a caller could attempt to create a resource owned by someone else and undermine the ABAC policy.
+
+### Hybrid decision
+
+```text
+JWT
+ │
+ ▼
+Authentication
+ │
+ ▼
+RBAC
+ │
+ │  Is the role allowed to attempt this operation?
+ │
+ ▼
+ABAC
+ │
+ │  Does this subject have access to this exact resource?
+ │
+ ▼
+Controller / Service
+```
+
+This is the main difference between endpoint-level RBAC and object-level ABAC.
+
+---
+
+# 🔑 RSA and ECDSA Key Generation
+
+This project uses asymmetric cryptography for JWT signing. The **private key signs** the JWT and the **public key verifies** the signature.
+
+> Run these commands from a terminal where OpenSSL is installed. Keep private keys out of source control and never commit production private keys to Git.
+
+## RSA key pair
+
+🔑 Generate RSA Private Key
+
+Example:
+
+```
+openssl genpkey \
+-algorithm RSA \
+-pkeyopt rsa_keygen_bits:3072 \
+-out private_key.pem
+
+```
+
+This creates:
+
+private_key.pem
+
+🔑 Generate RSA Public Key
+
+```aiignore
+openssl rsa \
+-pubout \
+-in private_key.pem \
+-out public_key.pem
+```
+
+Now:
+
+private_key.pem
+│
+│ derives
+▼
+public_key.pem
+
+Inspect the private key:
+
+```bash
+openssl pkey -in rsa_private_key.pem -text -noout
+```
+
+Inspect the public key:
+
+```bash
+openssl pkey -pubin -in rsa_public_key.pem -text -noout
+```
+
+Result:
+
+```text
+rsa_private_key.pem  → signing
+rsa_public_key.pem   → verification
+```
+
+For the current Java configuration, the selected pair can be copied/renamed to:
+
+```text
+src/main/resources/keys/private_key.pem
+src/main/resources/keys/public_key.pem
+```
+
+Use:
+
+```java
+KeyFactory.getInstance("RSA");
+```
+
+and:
+
+```java
+.signWith(privateKey, Jwts.SIG.RS256)
+```
+
+---
+
+## ECDSA / EC key pair
+
+The current JWT configuration uses **ES256**, which uses the NIST P-256 curve.
+
+Generate the EC private key:
+
+```bash
+openssl genpkey \
+  -algorithm EC \
+  -pkeyopt ec_paramgen_curve:P-256 \
+  -out private_key.pem
+```
+
+Generate the corresponding public key:
+
+```bash
+openssl ec \
+  -in private_key.pem \
+  -pubout \
+  -out public_key.pem
+```
+
+Inspect the private key:
+
+```bash
+openssl ec -in ecdsa_private_key.pem -text -noout
+```
+
+Inspect the public key:
+
+```bash
+openssl ec -pubin -in ecdsa_public_key.pem -text -noout
+```
+
+Result:
+
+```text
+ecdsa_private_key.pem  → signing
+ecdsa_public_key.pem   → verification
+```
+
+For the current Java configuration, the selected pair can be copied/renamed to:
+
+```text
+src/main/resources/keys/private_key.pem
+src/main/resources/keys/public_key.pem
+```
+
+Use:
+
+```java
+KeyFactory.getInstance("EC");
+```
+
+and:
+
+```java
+.signWith(privateKey, Jwts.SIG.ES256)
+```
+
+### Verify the ECDSA public/private pair
+
+Derive a public key from the private key:
+
+```bash
+openssl ec -in ecdsa_private_key.pem -pubout -out derived_public_key.pem
+```
+
+Compare the files on Linux/macOS:
+
+```bash
+cmp ecdsa_public_key.pem derived_public_key.pem
+```
+
+On Windows PowerShell:
+
+```powershell
+fc.exe ecdsa_public_key.pem derived_public_key.pem
+```
+
+---
+
+## RSA vs ECDSA command summary
+
+| Algorithm | Private key command                                                                 | Public key command                                                    | JWT algorithm | Java `KeyFactory` |
+|---|-------------------------------------------------------------------------------------|-----------------------------------------------------------------------|---|---|
+| RSA | `openssl genpkey -algorithm RSA -out private_key.pem -pkeyopt rsa_keygen_bits:3072` | `openssl rsa -pubout -in private_key.pem -pubout -out public_key.pem` | `RS256` | `RSA` |
+| ECDSA | `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out private_key.pem`        | `openssl ec -in private_key.pem -pubout -out public_key.pem`          | `ES256` | `EC` |
+
+Do not mix algorithms or key pairs:
+
+```text
+RSA key pair
+    ↓
+KeyFactory("RSA")
+    ↓
+RS256
+
+ECDSA key pair
+    ↓
+KeyFactory("EC")
+    ↓
+ES256
+```
+
+The private and public keys must belong to the same key pair.
 
 ---
 
@@ -3248,9 +3619,11 @@ Roles / Authorities
    ↓
 RBAC
    ↓
+ABAC Policy
+   ↓
 @PreAuthorize
    ↓
-Protected Controller
+Protected Controller / Service
 ```
 
 And, at the cryptographic level:
@@ -3274,9 +3647,16 @@ JWT SECURITY
 
 AUTHORIZATION
         │
-        ├── USER
-        ├── MODERATOR
-        └── ADMIN
+        ├── RBAC
+        │     ├── USER
+        │     ├── MODERATOR
+        │     └── ADMIN
+        │
+        └── ABAC
+              ├── Subject attributes
+              ├── Resource attributes
+              ├── Action
+              └── Environment/context
 ```
 
 The most important thing is to understand **why each component exists, what problem it solves, and who calls it**, rather than memorizing Spring Security configuration from tutorials.
