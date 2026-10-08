@@ -54,6 +54,9 @@ public class UserEntity {
     @Column(name = "profile_picture_url")
     private String profilePictureUrl;
     
+    @Column(name = "token_version",nullable = false)
+    private Long tokenVersion = 0L;
+    
     @PrePersist
     public void applyDefault(){
         
