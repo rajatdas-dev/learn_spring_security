@@ -1,7 +1,6 @@
 package com.example.spring_security_demo.security;
 
 import com.example.spring_security_demo.exception.ErrorCode;
-import com.example.spring_security_demo.response.ApiResponse;
 import com.example.spring_security_demo.response.AppErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -44,13 +43,6 @@ public class CustomAccessDeniedHandler implements AccessDeniedHandler {
 
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-
-//        ApiResponse<Void> apiResponse = new ApiResponse<>(
-//                false,
-//                "You do not have permission to access this resource",
-//                null
-        
-//        );
 
         String traceId = MDC.get("traceId");
         AppErrorResponse appErrorResponse = new AppErrorResponse(

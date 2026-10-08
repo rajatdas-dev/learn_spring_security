@@ -2,6 +2,7 @@ package com.example.spring_security_demo.config;
 
 import com.example.spring_security_demo.security.CustomAccessDeniedHandler;
 import com.example.spring_security_demo.security.JwtAuthenticationFilter;
+import com.example.spring_security_demo.security.OAuth2AuthenticationSuccessHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -85,17 +86,21 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity httpSecurity,
             CustomAccessDeniedHandler accessDeniedHandler,
-            AuthenticationEntryPoint authenticationEntryPoint
+            AuthenticationEntryPoint authenticationEntryPoint,
+            OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler
     ) throws  Exception{
         
        return httpSecurity.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Login/Register doesn't require authentication
-                        .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers("/auth/**",
+                                "/oauth2/**",
+                                "/login/**").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         // Everything else requires authentication
                         .anyRequest()
                         .authenticated())
+               .oauth2Login(oauth2 -> oauth2.successHandler(oAuth2AuthenticationSuccessHandler))
         
                .exceptionHandling(exception -> exception
                        .accessDeniedHandler(accessDeniedHandler)

@@ -11,7 +11,14 @@ import org.springframework.beans.factory.annotation.Value;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "users")
+@Table(
+        name = "users",
+uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_provider_subject",
+                        columnNames = {"identity_provider","provider_subject"}
+                )
+})
 public class UserEntity {
 
     @Id
@@ -27,13 +34,25 @@ public class UserEntity {
     @Column(nullable = false)
     private String role;
     
+    @Column(name = "identity_provider")
+    private String identityProvider;
+    
+    @Column(name = "provider_subject")
+    private String providerSubject;
+    
+    @Column
+    private String email;
+    
     // ABAC subject attributes
     @Column
     private String department;
     
     // Safe profile attribute 
-    @Column
+    @Column(name = "display_name")
     private String displayName;
+    
+    @Column(name = "profile_picture_url")
+    private String profilePictureUrl;
     
     @PrePersist
     public void applyDefault(){
