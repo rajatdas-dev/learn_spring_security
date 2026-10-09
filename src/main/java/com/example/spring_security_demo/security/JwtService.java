@@ -1,5 +1,6 @@
 package com.example.spring_security_demo.security;
 
+import com.example.spring_security_demo.entity.UserEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
@@ -25,10 +26,13 @@ public class JwtService {
         this.publicKey = publicKey;
     }
     
-    public String generateToken(UserDetails userDetails){
+    public String generateToken(UserEntity user){
         
         return Jwts.builder()
-                .subject(userDetails.getUsername())
+                .subject(user.getUsername())
+                .claim("uid",user.getId())
+                .claim("role",user.getRole())
+                .claim("ver",user.getTokenVersion())
                 .issuedAt(new Date())
                 .expiration(
                         new Date(
@@ -37,6 +41,26 @@ public class JwtService {
                 )
                 .signWith(privateKey, Jwts.SIG.ES256)   // for ECDSA
 //                .signWith(privateKey, Jwts.SIG.RS256)   // for RSA
+                .compact();
+    }
+
+    public String generateToken(
+            UserDetails userDetails
+    ) {
+
+        return Jwts.builder()
+                .subject(userDetails.getUsername())
+                .issuedAt(new Date())
+                .expiration(
+                        new Date(
+                                System.currentTimeMillis()
+                                        + 1000L * 60 * 60
+                        )
+                )
+                .signWith(
+                        privateKey,
+                        Jwts.SIG.ES256
+                )
                 .compact();
     }
     

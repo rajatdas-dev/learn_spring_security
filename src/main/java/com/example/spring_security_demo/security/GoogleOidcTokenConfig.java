@@ -23,7 +23,7 @@ public class GoogleOidcTokenConfig {
         
         JwtDecoder decoder = JwtDecoders.fromOidcIssuerLocation(issueUri);
 
-        OAuth2TokenValidator<Jwt> issueValidator = JwtValidators.createDefaultWithValidators(issueUri);
+        OAuth2TokenValidator<Jwt> issueValidator = JwtValidators.createDefaultWithIssuer(issueUri);
         
         OAuth2TokenValidator<Jwt> audienceValidator = jwt -> {
             if(jwt.getAudience().contains(clientId)){

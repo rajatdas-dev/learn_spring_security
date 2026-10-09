@@ -46,9 +46,10 @@ public class AuthServiceImpl implements AuthService {
                 )
         );
 
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        UserEntity user = userRepository.findByUsername(loginRequestDTO.getUsername()).orElseThrow();
+//        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         
-        String token = jwtService.generateToken(userDetails);
+        String token = jwtService.generateToken(user);
         
         return new LoginResponseDTO(token);
     }

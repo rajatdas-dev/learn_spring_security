@@ -13,4 +13,6 @@ public enum ErrorCode {
     USER_NOT_FOUND,
     
     NOT_FOUND,
+    MISSING,
+    NOT_VERIFIED,
 }
