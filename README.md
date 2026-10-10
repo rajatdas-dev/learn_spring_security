@@ -20,6 +20,11 @@ The project currently covers:
 * Method-level authorization
 * Custom `401 Unauthorized` handling
 * Custom `403 Forbidden` handling
+* OAuth 2.0 and OpenID Connect (OIDC) concepts
+* Google OIDC sign-in architecture for Flutter clients
+* External identity mapping to internal application users
+* OIDC ID-token validation and application JWT issuance
+* OAuth account-linking and role-assignment security
 
 ---
 
@@ -77,6 +82,14 @@ The project currently covers:
 45. [Complete Component Reference](#-complete-component-reference)
 46. [Learning Order](#-learning-order)
 47. [Final Mental Model](#-final-mental-model)
+48. [OAuth 2.0 and OpenID Connect (OIDC)](#-oauth-20-and-openid-connect-oidc)
+49. [OAuth 2.0 vs OIDC](#oauth-20-vs-oidc)
+50. [Flutter + Google OIDC Architecture](#-flutter--google-oidc-architecture)
+51. [Google OAuth Client ID Setup](#-google-oauth-client-id-setup)
+52. [Backend OIDC Token Validation](#-backend-oidc-token-validation)
+53. [External Identity and Internal User Mapping](#-external-identity-and-internal-user-mapping)
+54. [OIDC Security Rules](#-oidc-security-rules)
+55. [OIDC Implementation Checklist](#-oidc-implementation-checklist)
 
 ---
 
@@ -3588,6 +3601,188 @@ Signs asymmetric JWTs.
 Verifies asymmetric JWT signatures.
 
 ---
+
+# 🔐 OAuth 2.0 and OpenID Connect (OIDC)
+
+This project can support a second sign-in method—Google sign-in—without removing the existing username/password authentication, ES256 application JWT, RBAC, ABAC, or RSA/ECDSA key-learning material.
+
+The important design rule is: **Google proves the external identity; this application remains responsible for its own user account, roles, permissions, and API token.**
+
+## OAuth 2.0 vs OIDC
+
+- **OAuth 2.0** is an authorization framework. It allows a client to obtain limited access to a resource with the user's authorization.
+- **OpenID Connect (OIDC)** adds an identity layer on top of OAuth 2.0. It defines the ID token and standard identity claims used to sign a user in.
+- An **ID token** from Google is not the same thing as this application's API access token. The backend must validate the ID token before trusting its claims.
+- The application's existing **ES256 JWT** is still issued by this backend and is used to access this application's protected APIs.
+
+## 🏗️ Flutter + Google OIDC Architecture
+
+For a Flutter mobile app, use **Authorization Code Flow with PKCE** through a suitable maintained native OAuth/OIDC library. Do not embed a client secret in the Flutter app; mobile apps are public clients.
+
+```text
+Flutter app
+    │
+    │ Authorization Code + PKCE
+    ▼
+Google OIDC authorization
+    │
+    │ Google ID token
+    ▼
+POST /auth/oidc/google
+    │
+    ▼
+Backend validates ID token
+(issuer + signature + audience + expiry)
+    │
+    ▼
+Resolve Google (issuer, subject) identity
+    │
+    ▼
+Load or create internal UserEntity
+    │
+    ▼
+Issue this application's ES256 JWT
+    │
+    ▼
+Flutter stores token securely and sends:
+Authorization: Bearer <application-jwt>
+    │
+    ▼
+JwtAuthenticationFilter
+    │
+    ▼
+RBAC → ABAC → protected API
+```
+
+The Google ID token should be exchanged only after server-side validation. Do not use an unverified email, name, or picture from the client request as proof of identity. The backend should not simply accept a Google token as if it were the application's own JWT.
+
+## 🔑 Google OAuth Client ID Setup
+
+Client IDs are created in the [Google Cloud Console](https://console.cloud.google.com/). The exact client type depends on the platforms and OAuth library being used:
+
+1. Select or create a Google Cloud project.
+2. Configure the Google Auth Platform consent screen/branding and the required audience/test users, where applicable.
+3. Open **Google Auth Platform → Clients** (the labels may vary as Google's console evolves).
+4. Create the client type that matches the integration:
+    - **Android:** configure the Android package name and signing certificate fingerprint required by the selected Google sign-in integration.
+    - **iOS:** configure the iOS bundle identifier required by the integration.
+    - **Web application/backend:** configure authorized redirect URIs only when the selected flow actually uses a web redirect handled by that client.
+5. Copy the client ID and configure it for the matching client/integration. A Google client ID commonly ends in `.apps.googleusercontent.com`.
+
+Do not guess a redirect URI: it must exactly match the redirect scheme/URI configured by the chosen Flutter library and platform. Android, iOS, and web client IDs are not automatically interchangeable. Follow the selected library's current setup instructions and Google's console requirements.
+
+For backend validation, the expected **audience** must be the client ID intended for the token being received. If the mobile library obtains an ID token for a platform-specific client, configure the backend audience validation to match that design. Do not disable audience validation to make a token pass.
+
+Keep configuration outside committed source files where practical, for example:
+
+```properties
+oauth2.google.client-id=${GOOGLE_CLIENT_ID}
+oauth2.google.issuer-uri=https://accounts.google.com
+```
+
+PowerShell example for a local development session:
+
+```powershell
+$env:GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+```
+
+Never put a client secret in Flutter code. If a confidential web client is used on the backend for a server-side flow, its secret must remain on the server and must not be committed to Git.
+
+## 🔎 Backend OIDC Token Validation
+
+The backend should validate the Google ID token using a trusted OIDC/JWT validation library and Google’s issuer metadata/JWKs, rather than decoding the token and trusting its payload. At minimum, validation must verify:
+
+- the cryptographic signature against Google's published keys;
+- the expected issuer;
+- the expected audience/client ID;
+- the expiry and relevant time claims;
+- the presence of a stable subject (`sub`);
+- the application's required identity policy, such as requiring `email_verified` before using the email as a verified contact address.
+
+A Spring Boot application can use Spring Security's OAuth 2.0 Resource Server support as one building block for JWT validation. Add the dependency using the version managed by the project's Spring Boot dependency management rather than hard-coding a different Spring Security version. The exact `JwtDecoder` configuration must include audience validation as well as issuer/signature/time validation; issuer validation alone is not sufficient.
+
+Conceptual request DTO:
+
+```java
+public record OidcLoginRequestDTO(String idToken) {}
+```
+
+Conceptual endpoint:
+
+```http
+POST /auth/oidc/google
+Content-Type: application/json
+
+{
+  "idToken": "<google-id-token>"
+}
+```
+
+This is an architectural example, not a drop-in implementation. Add request validation, exception handling, rate limiting where appropriate, and tests for the exact Spring Security version used by the project.
+
+After validation, extract only the claims needed by the application, such as `sub`, `email`, `email_verified`, `name`, and `picture`. Treat profile fields as user-provided display data even when received from a trusted identity provider; do not use them to assign application privileges.
+
+## 👤 External Identity and Internal User Mapping
+
+Keep the provider identity separate from the application's own user identity. A scalable database model is:
+
+```text
+UserEntity
+├── id                    ← internal, canonical user ID
+├── username
+├── password              ← nullable only if passwordless/OIDC-only accounts are supported
+├── role                  ← assigned by this application
+├── email
+├── displayName
+└── profilePictureUrl
+
+UserIdentityEntity
+├── id
+├── user                  → UserEntity
+├── provider              → GOOGLE
+├── providerSubject       → Google's stable `sub` claim
+├── email
+└── emailVerified
+```
+
+Enforce a unique constraint on `(provider, providerSubject)`. The stable provider subject—not a display name and not an email address—is the primary key for matching an existing Google identity. The internal `UserEntity.id` remains the canonical subject for this application's authorization checks and resource ownership.
+
+Recommended login behavior:
+
+1. If the validated `(provider, subject)` identity already exists, load its linked internal user.
+2. If no identity exists and no internal account conflicts with the application's account-linking policy, create an internal user and identity record in a transaction.
+3. New accounts created through public Google sign-in receive `USER` by default.
+4. If an internal account already uses the same email, do **not** silently merge accounts based only on matching email. Require an explicit, authenticated account-linking process.
+5. If linking is supported, require proof of control of both accounts and record an audit event.
+
+The existing password-login flow and OIDC-login flow should converge on the same internal `UserEntity` and the same application-JWT issuance service. This means both kinds of users go through the existing `JwtAuthenticationFilter`, RBAC, and ABAC rules.
+
+## 🔐 OIDC Security Rules
+
+- **Never assign roles from Google claims or request JSON.** `USER`, `MODERATOR`, and `ADMIN` are application-owned roles.
+- **Never trust an ID token merely because it decodes successfully.** Verify signature, issuer, audience, expiry, and required claims.
+- **Never treat the Google ID token as the application's API JWT.** Validate it, resolve the internal account, and issue a separate application token.
+- **Never place client secrets in Flutter.** Use Authorization Code + PKCE for a native public client.
+- **Never auto-link accounts by email alone.** Use a deliberate account-linking flow.
+- **Never remove or repurpose the existing EC key pair for Google validation.** The existing `private_key.pem` and `public_key.pem` are for signing/verifying this application's ES256 JWTs. Google's ID tokens are verified using Google's published signing keys, not this application's EC private key.
+- **Keep the existing key-management guidance.** Do not commit production private keys. For production, use a secret manager or managed key service and plan key rotation.
+- Use `state` and `nonce` as required by the chosen OIDC flow/library, and follow the library's guidance for validating them. Do not accept arbitrary client-provided redirect URIs.
+- Keep authorization in the application database and policy layer, so Google sign-in does not bypass RBAC or ABAC.
+
+## ✅ OIDC Implementation Checklist
+
+- [ ] Choose target platforms: Android, iOS, or both.
+- [ ] Choose and configure a maintained Flutter OIDC/OAuth library.
+- [ ] Create the matching Google OAuth client(s) and configure the exact platform identifiers/redirect behavior.
+- [ ] Configure the backend's expected Google issuer and audience/client ID using environment variables.
+- [ ] Validate ID-token signature, issuer, audience, expiry, and required claims on the backend.
+- [ ] Add a provider identity table with a unique `(provider, providerSubject)` constraint.
+- [ ] Define safe account creation and explicit account-linking behavior.
+- [ ] Assign `USER` to new public OIDC accounts; manage elevated roles only through trusted admin controls.
+- [ ] Issue the existing ES256 application JWT after resolving the internal user.
+- [ ] Ensure the JWT filter loads the internal identity and current application roles according to the project's chosen token policy.
+- [ ] Test invalid signature, wrong issuer, wrong audience, expired token, missing subject, unverified email policy, existing identity, conflicting email, and account linking.
+- [ ] Test that OIDC users still receive the same RBAC/ABAC enforcement and `401`/`403` handling.
 
 # 🛠️ Project Purpose
 

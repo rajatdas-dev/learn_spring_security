@@ -3,14 +3,17 @@ package com.example.spring_security_demo.service.impl;
 import com.example.spring_security_demo.dto.request.LoginRequestDTO;
 import com.example.spring_security_demo.dto.response.LoginResponseDTO;
 import com.example.spring_security_demo.entity.UserEntity;
+import com.example.spring_security_demo.exception.ErrorCode;
 import com.example.spring_security_demo.repository.UserRepository;
 import com.example.spring_security_demo.security.JwtService;
 import com.example.spring_security_demo.service.AuthService;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -52,6 +55,19 @@ public class AuthServiceImpl implements AuthService {
         String token = jwtService.generateToken(user);
         
         return new LoginResponseDTO(token);
+    }
+
+    @Transactional
+    @Override
+    public void logout(Authentication authentication) {
+        
+        UserEntity user = userRepository.findByUsername(authentication.getName()).orElseThrow(()-> new UsernameNotFoundException(
+                "User name not found"
+        ));
+        
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        
+        userRepository.save(user);
     }
 
     public UserEntity toUserEntity(LoginRequestDTO loginRequestDTO){

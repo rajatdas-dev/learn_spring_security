@@ -1,5 +1,7 @@
 package com.example.spring_security_demo.security;
 
+import com.example.spring_security_demo.entity.UserEntity;
+import com.example.spring_security_demo.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -27,6 +29,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private UserDetailsService userDetailsService;
     
+    @Autowired
+    private UserRepository userRepository;
+    
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         
@@ -44,9 +49,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Claims claims = jwtService.extractClaims(token);
             String username = claims.getSubject();
             
-            if(username != null && SecurityContextHolder.getContext().getAuthentication() == null){
+            Long userId = claims.get("uid",Long.class);
+            
+            Long tokenVersion = claims.get("ver",Long.class);
+            
+            if(username == null || userId == null || tokenVersion == null){
+                filterChain.doFilter(
+                        request,response
+                );
+                return;
+            }   
+            
+            if(SecurityContextHolder.getContext().getAuthentication() == null){
+
+                UserEntity user = userRepository.findById(userId).orElse(null);
+                
+                if(user == null || !user.getUsername().equals(username) || !user.getTokenVersion().equals(tokenVersion)){
+                    filterChain.doFilter(
+                            request,
+                            response
+                    );
+                    return;
+                }
                 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                
                 UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,
@@ -55,6 +82,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
             }
+            
+//            if(username != null && SecurityContextHolder.getContext().getAuthentication() == null){
+//                
+//                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+//                UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+//                        userDetails,
+//                        null,
+//                        userDetails.getAuthorities()
+//                );
+//                
+//                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+//            }
         } catch (JwtException| IllegalArgumentException e){
             
             SecurityContextHolder.clearContext();

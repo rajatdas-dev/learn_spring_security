@@ -10,6 +10,7 @@ import com.example.spring_security_demo.service.OidcAuthenticationService;
 import com.example.spring_security_demo.service.impl.AuthServiceImpl;
 import jakarta.validation.Valid;
 import org.apache.catalina.User;
+import org.apache.catalina.connector.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -87,6 +88,18 @@ public class AuthController {
                 ApiResponse.success(
                         "Google Oidc login successful",
                         new LoginResponseDTO(token)
+                )
+        );
+    }
+    
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(Authentication authentication){
+        
+        authService.logout(authentication);
+        
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Logout Successful"
                 )
         );
     }
