@@ -1197,60 +1197,6 @@ The important lesson is:
 | Encryption                          | No               | No               | No                          |
 | Additional Bouncy Castle dependency | No               | No               | Yes, for this project setup |
 
----
-
-# 🏗️ Project Architecture
-
-```text
-src/
-└── main/
-    ├── java/
-    │   └── com/
-    │       └── example/
-    │           └── spring_security_demo/
-    │
-    │               ├── config/
-    │               │   ├── SecurityConfig.java
-    │               │   └── JwtKeyConfig.java
-    │               │
-    │               ├── controller/
-    │               │   ├── AuthController.java
-    │               │   └── UserController.java
-    │               │
-    │               ├── dto/
-    │               │   ├── LoginRequestDTO.java
-    │               │   └── LoginResponseDTO.java
-    │               │
-    │               ├── entity/
-    │               │   └── UserEntity.java
-    │               │
-    │               ├── repository/
-    │               │   └── UserRepository.java
-    │               │
-    │               ├── response/
-    │               │   └── ApiResponse.java
-    │               │
-    │               ├── service/
-    │               │   ├── AuthService.java
-    │               │   └── AuthServiceImpl.java
-    │               │
-    │               └── security/
-    │                   ├── CustomUserDetailsService.java
-    │                   ├── CustomAccessDeniedHandler.java
-    │                   ├── CustomAuthenticationEntryPoint.java
-    │                   ├── JwtService.java
-    │                   └── JwtAuthenticationFilter.java
-    │
-    └── resources/
-        ├── application.properties
-        │
-        └── keys/
-            ├── private_key.pem
-            └── public_key.pem
-```
-
----
-
 # 📂 File-by-File Explanation
 
 ## `SecurityConfig.java`
