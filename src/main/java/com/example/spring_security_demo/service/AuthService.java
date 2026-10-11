@@ -9,5 +9,7 @@ public interface AuthService {
     
     public LoginResponseDTO login(LoginRequestDTO loginRequestDTO);
     
-    public void logout(Authentication authentication);
+    public LoginResponseDTO refresh(String rawRefreshToken);
+    
+    public boolean logout(String refreshToken);
 }

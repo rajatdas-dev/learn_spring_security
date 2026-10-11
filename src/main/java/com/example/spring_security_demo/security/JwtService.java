@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.time.Instant;
 import java.util.Date;
 
 @Service
@@ -21,9 +22,23 @@ public class JwtService {
     private final PrivateKey privateKey;
     private final PublicKey publicKey;
     
-    public JwtService(PrivateKey privateKey, PublicKey publicKey){
+    private final long accessTokenTtlMs;
+    
+    public JwtService(
+            PrivateKey privateKey, PublicKey publicKey,
+            @Value("${jwt.access-token-ttl-ms: 900000}")
+            long accessTokenTtlMs
+    ){
         this.privateKey = privateKey;
         this.publicKey = publicKey;
+        
+        if(accessTokenTtlMs <= 0){
+            throw new IllegalArgumentException(
+                    "jwt.access-token-ttl-ms must be positive"
+            );
+        }
+        
+        this.accessTokenTtlMs = accessTokenTtlMs;
     }
     
     public String generateToken(UserEntity user){
@@ -48,14 +63,21 @@ public class JwtService {
             UserDetails userDetails
     ) {
 
+        Instant now = Instant.now();
+        
         return Jwts.builder()
                 .subject(userDetails.getUsername())
-                .issuedAt(new Date())
+                .issuedAt(Date.from(now))
+//                .issuedAt(new Date())
+//                .expiration(
+//                        new Date(
+//                                System.currentTimeMillis()
+//                                        + 1000L * 60 * 60
+//                        )
+//                )
+                
                 .expiration(
-                        new Date(
-                                System.currentTimeMillis()
-                                        + 1000L * 60 * 60
-                        )
+                        Date.from(now.plusMillis(accessTokenTtlMs))
                 )
                 .signWith(
                         privateKey,
@@ -71,6 +93,10 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+    
+    public long getAccessTokenTtlSeconds(){
+        return accessTokenTtlMs / 1000;
     }
 
 //    private final String secretKey;

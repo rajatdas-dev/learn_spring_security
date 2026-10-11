@@ -4,15 +4,19 @@ import com.example.spring_security_demo.dto.request.LoginRequestDTO;
 import com.example.spring_security_demo.dto.response.LoginResponseDTO;
 import com.example.spring_security_demo.entity.UserEntity;
 import com.example.spring_security_demo.exception.ErrorCode;
+import com.example.spring_security_demo.exception.ResourceNotFoundException;
 import com.example.spring_security_demo.repository.UserRepository;
 import com.example.spring_security_demo.security.JwtService;
 import com.example.spring_security_demo.service.AuthService;
+import com.example.spring_security_demo.service.RefreshTokenRotation;
+import com.example.spring_security_demo.service.RefreshTokenService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -31,8 +35,19 @@ public class AuthServiceImpl implements AuthService {
     
     @Autowired
     private JwtService jwtService;
+    
+    
+    private final RefreshTokenService refreshTokenService;
+    
+    @Autowired
+    private UserDetailsService userDetailsService;
+    
+    public AuthServiceImpl(RefreshTokenService refreshTokenService){
+        this.refreshTokenService = refreshTokenService;
+    }
 
     @Override
+    @Transactional
     public void register(LoginRequestDTO loginRequestDTO) {
 
         UserEntity userEntity = toUserEntity(loginRequestDTO);
@@ -40,6 +55,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public LoginResponseDTO login(LoginRequestDTO loginRequestDTO) {
 
         Authentication authentication = authenticationManager.authenticate(
@@ -49,25 +65,68 @@ public class AuthServiceImpl implements AuthService {
                 )
         );
 
-        UserEntity user = userRepository.findByUsername(loginRequestDTO.getUsername()).orElseThrow();
-//        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+//        UserEntity user = userRepository.findByUsername(loginRequestDTO.getUsername()).orElseThrow();
+        UserDetails principal = (UserDetails) authentication.getPrincipal();
         
-        String token = jwtService.generateToken(user);
+        UserEntity user = userRepository
+                .findByUsername(principal.getUsername())
+                .orElseThrow(()-> new ResourceNotFoundException(
+                        ErrorCode.USERNAME_NOT_FOUND,
+                        "Authenticated user no longer exists"
+                ));
         
-        return new LoginResponseDTO(token);
+//        String token = jwtService.generateToken(user);
+        
+        String accessToken = jwtService.generateToken(principal);
+        String refreshToken = refreshTokenService.create(user);
+        
+//        return new LoginResponseDTO(token);
+        
+        return tokenResponse(accessToken, refreshToken);
+    }
+
+    @Override
+    @Transactional
+    public LoginResponseDTO refresh(String rawRefreshToken) {
+
+        RefreshTokenRotation rotation = refreshTokenService.rotate(rawRefreshToken).orElse(null);
+        
+        if(rotation == null){
+            return null;
+        }
+        
+        UserDetails userDetails = userDetailsService.loadUserByUsername(rotation.user().getUsername());
+        
+        String accessToken = jwtService.generateToken(userDetails);
+        return tokenResponse(accessToken,rotation.refreshToken());
     }
 
     @Transactional
     @Override
-    public void logout(Authentication authentication) {
+    public boolean logout(String refreshToken) {
         
-        UserEntity user = userRepository.findByUsername(authentication.getName()).orElseThrow(()-> new UsernameNotFoundException(
-                "User name not found"
-        ));
+        return refreshTokenService.revoke(refreshToken);
         
-        user.setTokenVersion(user.getTokenVersion() + 1);
+//        UserEntity user = userRepository.findByUsername(authentication.getName()).orElseThrow(()-> new UsernameNotFoundException(
+//                "User name not found"
+//        ));
+//        
+//        user.setTokenVersion(user.getTokenVersion() + 1);
+//        
+//        userRepository.save(user);
+    }
+    
+    private LoginResponseDTO tokenResponse(
+            String accessToken, 
+            String refreshToken
+    ){
         
-        userRepository.save(user);
+        return new LoginResponseDTO(
+                accessToken,
+                refreshToken,
+                "Bearer",
+                jwtService.getAccessTokenTtlSeconds()
+        );
     }
 
     public UserEntity toUserEntity(LoginRequestDTO loginRequestDTO){

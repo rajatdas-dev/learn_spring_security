@@ -2,6 +2,7 @@ package com.example.spring_security_demo.controller;
 
 import com.example.spring_security_demo.dto.request.LoginRequestDTO;
 import com.example.spring_security_demo.dto.request.OidcLoginRequestDTO;
+import com.example.spring_security_demo.dto.request.RefreshTokenRequestDTO;
 import com.example.spring_security_demo.dto.response.LoginResponseDTO;
 import com.example.spring_security_demo.response.ApiResponse;
 import com.example.spring_security_demo.security.JwtService;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import org.apache.catalina.User;
 import org.apache.catalina.connector.Response;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -63,12 +65,33 @@ public class AuthController {
             @RequestBody LoginRequestDTO loginRequestDTO
             ){
         
-        LoginResponseDTO loginResponseDTO = authService.login(loginRequestDTO);
-        
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Login Successful !",
-                        loginResponseDTO
+                        authService.login(loginRequestDTO)
+                )
+        );
+    }
+    
+    public ResponseEntity<ApiResponse<LoginResponseDTO>> refresh(
+            @Valid @RequestBody RefreshTokenRequestDTO requestDTO
+            ){
+        
+        LoginResponseDTO tokens = authService.refresh(requestDTO.getRefreshToken());
+        
+        if(tokens == null){
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(
+                            false,
+                            "Invalid, expired, or reused refresh token",
+                            null
+                    ));
+        }
+        
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Token refreshed successfully",
+                        tokens
                 )
         );
     }
@@ -93,14 +116,32 @@ public class AuthController {
     }
     
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(Authentication authentication){
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @Valid @RequestBody RefreshTokenRequestDTO requestDTO
+    ){
         
-        authService.logout(authentication);
+        boolean revoked = authService.logout(requestDTO.getRefreshToken());
+        
+        if(!revoked){
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(
+                            false,
+                            "Invalid refresh token",
+                            null
+                    ));
+        }
         
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        "Logout Successful"
+                        "Logged out; refresh-token family revoked"
                 )
         );
+//        authService.logout(authentication);x
+//        
+//        return ResponseEntity.ok(
+//                ApiResponse.success(
+//                        "Logout Successful"
+//                )
+//        );
     }
 }
