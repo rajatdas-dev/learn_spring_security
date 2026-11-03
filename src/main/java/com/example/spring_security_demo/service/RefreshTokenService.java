@@ -7,11 +7,9 @@ import java.util.Optional;
 
 public interface RefreshTokenService {
     
-    public String create(UserEntity user);
+    String create(UserEntity user);
     
-    public Optional<RefreshTokenRotation> rotate(String rawToken);
+    Optional<RefreshTokenRotation> rotate(String rawToken);
     
-    public boolean revoke(String rawToken);
-    
-    
+    boolean revoke(String rawToken);
 }

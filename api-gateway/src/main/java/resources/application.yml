@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: spring-security-api-gateway
+
+  main:
+    web-application-type: reactive
+
+server:
+  port: 8080
+
+backend:
+  base-url: ${BACKEND_BASE_URL:http://localhost:8081}
+
+security:
+
+  jwt:
+    jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8081/.well-known/jwks.json}
+    issuer: ${JWT_ISSUER:spring-security-auth}
+    audience: ${JWT_AUDIENCE:spring-security-api}
+
+  opa:
+    url: ${OPA_URL:http://localhost:8181}
+
+  rate-limit:
+    capacity: ${RATE_LIMIT_CAPACITY:60}
+    refill-per-second: ${RATE_LIMIT_REFILL_PER_SECOND:1}
+
+logging:
+  level:
+    org.springframework.security: INFO
+    org.springframework.cloud.gateway: INFO

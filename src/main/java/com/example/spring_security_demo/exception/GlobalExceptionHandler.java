@@ -56,7 +56,23 @@ public class GlobalExceptionHandler {
         );
     }
     
-    
+    @ExceptionHandler(UnAuthorizedException.class)
+    public ResponseEntity<AppErrorResponse> handleUnAuthorizedException(
+            UnAuthorizedException unAuthorizedException, 
+            HttpServletRequest request
+    ) {
+        log.error("Un-authorized User",
+                request.getMethod(),
+                request.getRequestURI(),
+                unAuthorizedException);
+        
+        return buildResponse(
+                unAuthorizedException.getStatus(),
+                unAuthorizedException.getErrorCode(),
+                unAuthorizedException.getMessage(),
+                request
+        );
+    }
     
     
     private ResponseEntity<AppErrorResponse> buildResponse(
