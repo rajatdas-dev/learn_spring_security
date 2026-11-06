@@ -23,45 +23,89 @@ public class JwtKeyConfig {
     // ECDSA 
     
     @Bean
-    public PrivateKey privateKey() throws Exception{
+    public PrivateKey privateKey(
+            @Value("${jwt.private-key}") Resource privateKeyResource
+    ) throws Exception{
         
-        String key = Files.readString(
-                Path.of("src/main/resources/keys/private_key.pem")
-        );
+        String pem = readPem(privateKeyResource);
         
-        key = key.
-                replace("-----BEGIN PRIVATE KEY-----","")
+        String encoded = pem
+                .replace("-----BEGIN PRIVATE KEY-----","")
                 .replace("-----END PRIVATE KEY-----","")
                 .replaceAll("\\s","");
         
-        byte[] decoded = Base64.getDecoder().decode(key);
+        byte[] decoded = Base64.getDecoder().decode(encoded);
         
         PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(decoded);
         
-        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+        return KeyFactory.getInstance("EC")
+                .generatePrivate(keySpec);
         
-        return keyFactory.generatePrivate(keySpec);
+        
+        
+//        String key = Files.readString(
+//                Path.of("src/main/resources/keys/private_key.pem")
+//        );
+//        
+//        key = key.
+//                replace("-----BEGIN PRIVATE KEY-----","")
+//                .replace("-----END PRIVATE KEY-----","")
+//                .replaceAll("\\s","");
+//        
+//        byte[] decoded = Base64.getDecoder().decode(key);
+//        
+//        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(decoded);
+//        
+//        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+//        
+//        return keyFactory.generatePrivate(keySpec);
     }
     
     @Bean
-    public PublicKey publicKey() throws Exception {
+    public PublicKey publicKey(
+            @Value("${jwt.public-key}") Resource publicKeyResource 
+    ) throws Exception {
         
-        String key = Files.readString(
-                Path.of("src/main/resources/keys/public_key.pem")
-        );
+        String pem = readPem(publicKeyResource);
         
-        key = key
+        String encoded = pem
                 .replace("-----BEGIN PUBLIC KEY-----","")
                 .replace("-----END PUBLIC KEY-----","")
                 .replaceAll("\\s","");
         
-        byte[] decoded = Base64.getDecoder().decode(key);
+        byte[] decoded = Base64.getDecoder().decode(encoded);
         
         X509EncodedKeySpec keySpec = new X509EncodedKeySpec(decoded);
         
-        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+        return KeyFactory.getInstance("EC")
+                .generatePublic(keySpec);
         
-        return keyFactory.generatePublic(keySpec);
+//        String key = Files.readString(
+//                Path.of("src/main/resources/keys/public_key.pem")
+//        );
+//        
+//        key = key
+//                .replace("-----BEGIN PUBLIC KEY-----","")
+//                .replace("-----END PUBLIC KEY-----","")
+//                .replaceAll("\\s","");
+//        
+//        byte[] decoded = Base64.getDecoder().decode(key);
+//        
+//        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(decoded);
+//        
+//        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+//        
+//        return keyFactory.generatePublic(keySpec);
+    }
+    
+    private String readPem(Resource resource) throws IOException{
+        
+        try (var inputStream = resource.getInputStream()){
+            return new String(
+                    inputStream.readAllBytes(),
+                    StandardCharsets.UTF_8
+            );
+        }
     }
 
     

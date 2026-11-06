@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -42,46 +43,95 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         
-        String token = authHeader.substring(7);
+        String token = authHeader.substring(7).trim();
         
         try{
 
             Claims claims = jwtService.extractClaims(token);
             String username = claims.getSubject();
             
-            Long userId = claims.get("uid",Long.class);
+            Object uidClaim = claims.get("uid");
+            Object versionClaim = claims.get("ver");
             
-            Long tokenVersion = claims.get("ver",Long.class);
-            
-            if(username == null || userId == null || tokenVersion == null){
-                filterChain.doFilter(
-                        request,response
-                );
+            if(!(uidClaim instanceof Number uid)
+            || !(versionClaim instanceof Number version)
+            || username == null
+            || username.isBlank()){
+                
+                reject(response,"Required JWT claims are missing");
                 return;
-            }   
+            }
+            
+//            Long userId = claims.get("uid",Long.class);
+//            
+//            Long tokenVersion = claims.get("ver",Long.class);
+//            
+//            if(username == null || userId == null || tokenVersion == null){
+//                filterChain.doFilter(
+//                        request,response
+//                );
+//                return;
+//            }   
             
             if(SecurityContextHolder.getContext().getAuthentication() == null){
+                
+                filterChain.doFilter(request,response);
+                return;
 
-                UserEntity user = userRepository.findById(userId).orElse(null);
-                
-                if(user == null || !user.getUsername().equals(username) || !user.getTokenVersion().equals(tokenVersion)){
-                    filterChain.doFilter(
-                            request,
-                            response
-                    );
-                    return;
-                }
-                
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                
-                UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                );
-                
-                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+//                UserEntity user = userRepository.findById(userId).orElse(null);
+//                
+//                if(user == null || !user.getUsername().equals(username) || !user.getTokenVersion().equals(tokenVersion)){
+//                    filterChain.doFilter(
+//                            request,
+//                            response
+//                    );
+//                    return;
+//                }
+//                
+//                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+//                
+//                UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+//                        userDetails,
+//                        null,
+//                        userDetails.getAuthorities()
+//                );
+//                
+//                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
             }
+            
+            UserEntity user = userRepository.findById(uid.longValue()).orElse(null);
+            
+            if(user == null){
+                reject(response,"User does not exist");
+                return;
+            }
+            
+            if(!user.getUsername().equals(username)){
+                reject(response,"JWT subject does not match user");
+                return;
+            }
+            
+            if(user.getTokenVersion() == null
+            || user.getTokenVersion().longValue() != version.longValue()){
+                
+                reject(response, "Token is revoked");
+                return;
+            }
+            
+            UserDetails userDetails = User
+                    .withUsername(user.getUsername())
+                    .password(user.getPassword())
+                    .roles(user.getRole())
+                    .build();
+            
+            UsernamePasswordAuthenticationToken authenticationToken = 
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
+            
+            SecurityContextHolder.getContext().setAuthentication(authenticationToken);
             
 //            if(username != null && SecurityContextHolder.getContext().getAuthentication() == null){
 //                
@@ -96,9 +146,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 //            }
         } catch (JwtException| IllegalArgumentException e){
             
-            SecurityContextHolder.clearContext();
+            reject(response,"Invalid or expired bearer token");
+            return;
         }
         
         filterChain.doFilter(request,response);
+    }
+    
+    private void reject(
+            HttpServletResponse response,
+            String message
+    ) throws IOException{
+        
+        SecurityContextHolder.clearContext();
+        
+        response.setStatus(
+                HttpServletResponse.SC_UNAUTHORIZED
+        );
+        
+        response.setContentType("application/json");
+        
+        response.getWriter().write(
+                "{\"error\":\"unauthorized\",\"message\":\""
+                +message
+                +"\"}"
+        );
+        
     }
 }

@@ -1,35 +1,85 @@
+```gitignore
+# ==============================
+# Maven / Build
+# ==============================
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ==============================
+# Environment variables
+# ==============================
+.env
+.env.*
+!.env.example
+
+# ==============================
+# Security: Secrets and Credentials
+# ==============================
+secrets/
+**/secrets/
+
+# Private keys
+*.key
+*.pem
+
+# Certificates and keystores
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# JWT private key (legacy location)
 src/main/resources/keys/private_key.pem
 
-### STS ###
-.apt_generated
+# ==============================
+# Spring Tool Suite / Eclipse
+# ==============================
+.apt_generated/
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
-.sts4-cache
+.sts4-cache/
 
-### IntelliJ IDEA ###
-.idea
+# ==============================
+# IntelliJ IDEA
+# ==============================
+.idea/
 *.iws
 *.iml
 *.ipr
 
-### NetBeans ###
+# ==============================
+# NetBeans
+# ==============================
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
-### VS Code ###
+# ==============================
+# VS Code
+# ==============================
 .vscode/
 
+# ==============================
+# OS generated files
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Logs
+# ==============================
+*.log
+logs/
+```

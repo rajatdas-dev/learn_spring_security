@@ -1,6 +1,7 @@
 package com.example.spring_security_demo.security;
 
 import com.example.spring_security_demo.entity.UserEntity;
+import com.example.spring_security_demo.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
@@ -8,6 +9,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -15,40 +17,78 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 public class JwtService {
     
     private final PrivateKey privateKey;
     private final PublicKey publicKey;
+    private final UserRepository userRepository;
     
     private final long accessTokenTtlMs;
+    private final long clockSkewSeconds;
+    
+    private final String issuer;
+    private final String audience;
     
     public JwtService(
-            PrivateKey privateKey, PublicKey publicKey,
+            PrivateKey privateKey,
+            PublicKey publicKey,
+            UserRepository userRepository,
             @Value("${jwt.access-token-ttl-ms: 900000}")
-            long accessTokenTtlMs
+            long accessTokenTtlMs,
+            @Value("${jwt.clock-skew-seconds:60}")
+            long clockSkewSeconds,
+            @Value("${jwt.issuer")
+            String issuer,
+            @Value("${jwt.audience}")
+            String audience
     ){
-        this.privateKey = privateKey;
-        this.publicKey = publicKey;
-        
-        if(accessTokenTtlMs <= 0){
+
+        if(accessTokenTtlMs <= 0 || clockSkewSeconds<0){
             throw new IllegalArgumentException(
-                    "jwt.access-token-ttl-ms must be positive"
+                    "Invalid JWT time configuration"
             );
         }
         
+        
+        this.privateKey = privateKey;
+        this.publicKey = publicKey;
+        this.userRepository = userRepository;
+        
+        
+//        if(accessTokenTtlMs <= 0){
+//            throw new IllegalArgumentException(
+//                    "jwt.access-token-ttl-ms must be positive"
+//            );
+//        }
+        
         this.accessTokenTtlMs = accessTokenTtlMs;
+        this.clockSkewSeconds = clockSkewSeconds;
+        
+        this.issuer = issuer;
+        this.audience = audience;
     }
     
     public String generateToken(UserEntity user){
         
+        Instant now = Instant.now();
+        
+        long tokenVersion = user.getTokenVersion() == null
+                ?0L 
+                : user.getTokenVersion();
+        
         return Jwts.builder()
                 .subject(user.getUsername())
+                .issuer(issuer)
+                .claim("aud",audience)
                 .claim("uid",user.getId())
                 .claim("role",user.getRole())
-                .claim("ver",user.getTokenVersion())
-                .issuedAt(new Date())
+                .claim("ver",tokenVersion)
+                .id(UUID.randomUUID().toString())
+                .issuedAt(Date.from(now))
+                .notBefore(Date.from(now))
                 .expiration(
                         new Date(
                                 System.currentTimeMillis() + 1000 * 60 * 60
@@ -86,14 +126,14 @@ public class JwtService {
                 .compact();
     }
     
-    public Claims extractClaims(String token){
-        
-        return Jwts.parser()
-                .verifyWith(publicKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-    }
+//    public Claims extractClaims(String token){
+//        
+//        return Jwts.parser()
+//                .verifyWith(publicKey)
+//                .build()
+//                .parseSignedClaims(token)
+//                .getPayload();
+//    }
     
     public long getAccessTokenTtlSeconds(){
         return accessTokenTtlMs / 1000;
@@ -137,5 +177,62 @@ public class JwtService {
 //        return Keys.hmacShaKeyFor(
 //                Decoders.BASE64.decode(secretKey)
 //        );
+//    }
+
+public Claims extractClaims(String token) {
+
+    Claims claims = Jwts.parser()
+
+            .verifyWith(publicKey)
+
+            .clockSkewSeconds(clockSkewSeconds)
+
+            .build()
+
+            .parseSignedClaims(token)
+
+            .getPayload();
+
+    if (!issuer.equals(claims.getIssuer())) {
+        throw new JwtException("Invalid JWT issuer");
+    }
+
+    Object audienceClaim = claims.get("aud");
+
+    if (!(audienceClaim instanceof String value)
+            || !audience.equals(value)) {
+
+        throw new JwtException("Invalid JWT audience");
+    }
+
+    if (claims.getSubject() == null
+            || claims.getId() == null
+            || claims.getIssuedAt() == null
+            || claims.getNotBefore() == null
+            || claims.getExpiration() == null
+            || claims.get("uid") == null
+            || claims.get("ver") == null) {
+
+        throw new JwtException(
+                "Required JWT claim is missing"
+        );
+    }
+
+    if (claims.getIssuedAt()
+            .toInstant()
+            .isAfter(
+                    Instant.now().plusSeconds(clockSkewSeconds)
+            )) {
+
+        throw new JwtException(
+                "JWT issued-at time is in the future"
+        );
+    }
+
+    return claims;
+}
+
+//    public long getAccessTokenTtlSeconds() {
+//        return accessTokenTtlMs / 1000;
 //    }
 }

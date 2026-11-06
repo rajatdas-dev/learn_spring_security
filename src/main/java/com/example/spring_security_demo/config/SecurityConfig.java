@@ -3,7 +3,9 @@ package com.example.spring_security_demo.config;
 import com.example.spring_security_demo.security.CustomAccessDeniedHandler;
 import com.example.spring_security_demo.security.JwtAuthenticationFilter;
 import com.example.spring_security_demo.security.OAuth2AuthenticationSuccessHandler;
+import org.apache.catalina.filters.RateLimitFilter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -16,9 +18,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.crypto.scrypt.SCryptPasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -30,11 +30,13 @@ public class SecurityConfig {
 
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
     
     private final UserDetailsService userDetailsService;
 
-    public SecurityConfig(UserDetailsService userDetailsService) {
+    public SecurityConfig(UserDetailsService userDetailsService, RateLimitFilter rateLimitFilter) {
         this.userDetailsService = userDetailsService;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
 //    @Bean
@@ -48,6 +50,28 @@ public class SecurityConfig {
 //        return new InMemoryUserDetailsManager(user);
 //    }
 
+    /**
+     * Prevent duplicate servlet-container registration
+     * Both filters should execute through Spring Security chain
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterServletRegistration(){
+
+        FilterRegistrationBean<JwtAuthenticationFilter> registrationBean = new FilterRegistrationBean<>(jwtAuthenticationFilter);
+        
+        registrationBean.setEnabled(false);
+        return registrationBean;
+    }
+    
+    @Bean
+    public FilterRegistrationBean<RateLimitFilter> rateLimitServletRegistration(){
+        
+        FilterRegistrationBean<RateLimitFilter> registrationBean = new FilterRegistrationBean<>(rateLimitFilter);
+        
+        registrationBean.setEnabled(false);
+        return registrationBean;
+    }
+
     @Bean
     public PasswordEncoder passwordEncoder(){
         
@@ -60,7 +84,6 @@ public class SecurityConfig {
     // and use BCrypt to verify the password
     @Bean
     public AuthenticationProvider authenticationProvider(
-            UserDetailsService userDetailsService,
             PasswordEncoder passwordEncoder
     ){
 
@@ -91,6 +114,7 @@ public class SecurityConfig {
     ) throws  Exception{
         
        return httpSecurity.csrf(csrf -> csrf.disable())
+               .authenticationProvider(authenticationProvider(passwordEncoder()))
                 .authorizeHttpRequests(auth -> auth
                         // Login/Register doesn't require authentication
                         .requestMatchers("/auth/**",
@@ -112,7 +136,12 @@ public class SecurityConfig {
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
-                ).build();
+                )
+               .addFilterBefore(
+                       rateLimitFilter,
+                       JwtAuthenticationFilter.class
+               )
+               .build();
     }
     
 
