@@ -90,6 +90,7 @@ The project currently covers:
 53. [External Identity and Internal User Mapping](#-external-identity-and-internal-user-mapping)
 54. [OIDC Security Rules](#-oidc-security-rules)
 55. [OIDC Implementation Checklist](#-oidc-implementation-checklist)
+56. [Current Project Implementation: Advanced Security Topics](#-current-project-implementation-advanced-security-topics)
 
 ---
 
@@ -3802,3 +3803,251 @@ AUTHORIZATION
 ```
 
 The most important thing is to understand **why each component exists, what problem it solves, and who calls it**, rather than memorizing Spring Security configuration from tutorials.
+
+
+---
+
+# 🚀 Current Project Implementation: Advanced Security Topics
+
+This section documents the **current codebase implementation** in addition to the Spring Security fundamentals explained above. The project is still a **single Spring Boot monolith**; these features do not mean that an API Gateway or microservices have been introduced.
+
+## Current implementation at a glance
+
+| Area | Current implementation | Important boundary |
+|---|---|---|
+| Access-token signing | ES256 (ECDSA P-256) | Private key signs; public key verifies |
+| Token validation | Signature, issuer, audience, expiry, not-before, required claims and clock sanity | Decoding a JWT is not validation |
+| Token revocation | Database-backed `tokenVersion` check | Logout-all invalidates existing access tokens through the version check |
+| Refresh tokens | Rotation, hashed storage and family revocation | Raw refresh tokens are not stored |
+| Rate limiting | Per-IP in-memory fixed-window filter | Learning implementation; not distributed |
+| Centralized policy | Optional OPA for document read/update/delete | User-management/profile policy remains Java-side |
+| mTLS | Optional HTTPS listener requiring client certificate | TLS authenticates the client workload, not the end user |
+| Internal HTTP | Optional mTLS-enabled `RestClient` | In-process Java calls do not need mTLS |
+| Clock handling | Configurable JWT clock skew plus OS NTP guidance | Clock skew does not synchronize clocks |
+
+## Requirements
+
+- JDK 21
+- PostgreSQL
+- Maven Wrapper (`mvnw` / `mvnw.cmd`)
+- OpenSSL and Java `keytool` for local certificate generation
+- OPA CLI or Docker, only if testing OPA integration
+
+## 1. Local configuration and secrets
+
+Generated credentials and keys belong outside source control. The local development layout is:
+
+```text
+secrets/
+├── jwt/
+│   ├── private_key.pem
+│   └── public_key.pem
+└── mtls/
+    ├── ca/
+    │   ├── ca.key
+    │   └── ca.crt
+    ├── server/
+    │   ├── server.key
+    │   ├── server.crt
+    │   └── server.p12
+    ├── client/
+    │   ├── client.key
+    │   ├── client.crt
+    │   └── client.p12
+    └── truststore/
+        └── truststore.p12
+```
+
+The exact generated files are controlled by the scripts. `secrets/` is ignored by Git. The `certificates/` directory is for committed documentation only; do not put generated private keys or keystores there.
+
+### Generate JWT ES256 keys
+
+Run from the repository root in Git Bash or WSL:
+
+```bash
+bash scripts/generate-jwt-keys.sh
+```
+
+The application reads the key locations from `JWT_PRIVATE_KEY_LOCATION` and `JWT_PUBLIC_KEY_LOCATION`. Defaults point to the local generated files under `secrets/jwt/`. Never commit the private key.
+
+### Configure the database password
+
+PowerShell:
+
+```powershell
+$env:DB_PASSWORD="your-local-postgres-password"
+```
+
+Use a local environment variable or a secret manager. Do not hardcode real credentials in `application.properties`. `.env.example` may be committed; `.env` must not be committed.
+
+## 2. Run the application
+
+PowerShell:
+
+```powershell
+$env:DB_PASSWORD="your-local-postgres-password"
+.\\mvnw.cmd clean test
+.\\mvnw.cmd spring-boot:run
+```
+
+Default HTTP port: `8080`. Run the tests before committing changes.
+
+## 3. Implemented security capabilities
+
+### A. JWT validation strategy
+
+`security/JwtService.java` issues and validates ES256 tokens. Validation covers the cryptographic signature, issuer, audience, expiry, not-before, required claims and issued-at clock sanity. `security/JwtAuthenticationFilter.java` extracts the bearer token, validates it, loads the current user and checks the token's user identifier and token version against database state.
+
+Do not treat Base64 decoding or successful JSON parsing as proof that a JWT is valid. A token must pass signature and claim validation.
+
+### B. Token revocation and refresh-token rotation
+
+- `POST /auth/logout` revokes the refresh-token family associated with the supplied refresh token. An already-issued access JWT remains valid until its short expiry unless another revocation mechanism invalidates it.
+- `POST /auth/logout-all` requires an access token, increments the user's `tokenVersion` and revokes all refresh-token sessions for that user. Existing access tokens fail the database version check.
+- Refresh-token rotation is transactional and uses database locking to prevent concurrent reuse races. Refresh tokens are stored as SHA-256 hashes, not raw values.
+
+This design trades a database lookup on authenticated requests for immediate logout-all invalidation. It is not purely stateless.
+
+### C. Rate limiting
+
+`ratelimit/RateLimitFilter.java` applies per-IP fixed-window limits to sensitive authentication endpoints such as login, registration, refresh and Google OIDC login. Defaults are configured in application properties. Rejected requests receive HTTP `429 Too Many Requests` and a `Retry-After` header.
+
+**Limitation:** the current limiter is in-memory and per JVM. It resets on restart and does not coordinate limits across multiple application instances. For production, use a shared store (for example Redis with an atomic algorithm) or a managed edge/WAF rate limiter. Do not trust `X-Forwarded-For` unless the application is reachable only through a correctly configured trusted proxy.
+
+### D. Centralized authorization with OPA
+
+Java authorization remains the default. OPA can be enabled for document read/update/delete decisions. Policy source: `opa-policies/spring_security.rego`.
+
+Start OPA from the repository root:
+
+```bash
+opa run --server --addr :8181 opa-policies/spring_security.rego
+```
+
+Then configure:
+
+```powershell
+$env:OPA_ENABLED="true"
+$env:OPA_URL="http://localhost:8181"
+```
+
+Restart the Spring Boot application after changing environment configuration. `OpaAuthorizationService` sends subject, resource and action attributes to OPA. The Rego policy is default-deny. If OPA is enabled but unavailable, document access fails closed.
+
+**Scope boundary:** OPA currently governs document read/update/delete decisions only. User-management/profile authorization remains in the existing Java `UserAccessPolicy`; do not assume every endpoint is evaluated by OPA.
+
+### E. Mutual TLS (mTLS)
+
+The mTLS profile configures an HTTPS listener on port `8443` and requires a client certificate trusted by the configured CA. Generate the local CA, server/client certificates, PKCS12 stores and truststore using:
+
+```bash
+bash scripts/generate-mtls-certs.sh
+```
+
+The script writes generated material under `secrets/mtls/`. It requires OpenSSL and Java `keytool` to be available on `PATH`. On Windows, configure `JAVA_HOME` to your JDK installation and add its `bin` directory to `PATH` so `keytool.exe` is discoverable.
+
+Start with the mTLS profile in PowerShell:
+
+```powershell
+$env:DB_PASSWORD="your-local-postgres-password"
+$env:SPRING_PROFILES_ACTIVE="mtls"
+.\\mvnw.cmd spring-boot:run
+```
+
+The HTTPS server requires a trusted client certificate during the TLS handshake. A client without an acceptable certificate should fail before reaching the HTTP controller. The actual certificate and truststore paths/passwords are configured by the mTLS profile and environment properties; keep all generated files in `secrets/`.
+
+Example curl test from Git Bash/WSL (paths are under `secrets/mtls/`):
+
+```bash
+curl --request POST \
+  --cacert secrets/mtls/ca/ca.crt \
+  --cert secrets/mtls/client/client.crt \
+  --key secrets/mtls/client/client.key \
+  --header "Content-Type: application/json" \
+  --data '{"username":"your-user","password":"your-password"}' \
+  https://localhost:8443/auth/login
+```
+
+This CA and its certificates are for local learning only. Do not use the local CA, demo passwords or development certificate lifecycle as a production PKI design.
+
+### F. Internal communication security
+
+This repository is a monolith. Calls between Spring services inside the same process do not cross a network boundary, so adding mTLS between Java classes or service beans would be meaningless.
+
+For a real outbound internal HTTP call, `config/InternalMtlsClientConfig.java` provides an optional mTLS-configured `RestClient`. Enable and configure it using the `INTERNAL_MTLS_CLIENT_ENABLED` and related key/trust-store properties. The remote service must independently require and validate the client certificate.
+
+Keep the two identities distinct:
+
+- JWT: the authenticated application user or delegated caller.
+- mTLS certificate: the client workload/service making the network connection.
+
+Use both when the receiving service needs to authorize both the end-user identity and the calling workload identity.
+
+### G. Clock synchronization
+
+JWT validation supports a small configurable tolerance through `JWT_CLOCK_SKEW_SECONDS` (default 60 seconds). This only tolerates small clock differences; it does not synchronize machines.
+
+Windows (run an elevated terminal if required):
+
+```powershell
+w32tm /resync
+w32tm /query /status
+```
+
+Linux:
+
+```bash
+timedatectl set-ntp true
+timedatectl status
+```
+
+Use the organization's approved NTP/time service in deployed environments. Do not increase allowed clock skew to hide an unsynchronized host.
+
+## 4. Useful API checks
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/auth/register` | Register a user |
+| `POST` | `/auth/login` | Obtain access/refresh tokens |
+| `POST` | `/auth/refresh` | Rotate a refresh token |
+| `POST` | `/auth/logout` | Revoke the presented refresh-token family |
+| `POST` | `/auth/logout-all` | Invalidate all user sessions/access tokens through `tokenVersion` |
+| `GET` | `/documents/{documentId}` | Read a document subject to Java or OPA policy |
+
+Use the request DTOs under `src/main/java/com/example/spring_security_demo/dto/` to confirm exact request shapes. Example login body:
+
+```json
+{\"username\":\"your-user\",\"password\":\"your-password\"}
+```
+
+## 5. Git and secret-management rules
+
+Before staging or committing, inspect the staged file list:
+
+```bash
+git status --short
+git add .
+git diff --cached --name-only
+```
+
+Never commit:
+
+- `secrets/` or generated CA/server/client private keys
+- JWT private keys
+- `.env` files or real credentials
+- PKCS12/JKS/PFX keystores containing private keys
+
+Commit the generation scripts, policy files, configuration templates, `.env.example`, documentation and source code. `.gitignore` prevents new untracked secrets from being added, but it does not remove files already tracked by Git. If a private key was committed, remove it from tracking/history as appropriate and rotate it.
+
+## 6. Production gaps — do not mistake this learning project for a production-ready platform
+
+The current implementation is for learning and demonstration. Before production use, at minimum address:
+
+1. Replace in-memory rate limiting with a distributed limiter and define trusted-proxy behavior.
+2. Store signing keys and TLS private keys in a managed secret manager/HSM/KMS; implement rotation and key identifiers.
+3. Define a production PKI lifecycle for mTLS: CA custody, issuance, renewal, revocation and trust rotation.
+4. Add OPA availability, timeout, retry and policy deployment/versioning strategy; retain fail-closed behavior for protected decisions.
+5. Add audit events for role changes, document access decisions, refresh-token reuse and administrative actions.
+6. Add integration/security tests for JWT invalid signatures/claims, revocation, concurrent refresh, rate limits, OPA deny/unavailable, and mTLS handshake failures.
+7. Review CORS, CSRF applicability, headers, TLS termination, database permissions, backups, observability and incident response for the actual deployment model.
+
+This repository is a learning codebase, not a security certification or a drop-in production reference architecture.
